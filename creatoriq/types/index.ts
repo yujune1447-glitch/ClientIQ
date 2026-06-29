@@ -168,6 +168,39 @@ export interface InstagramSummary {
   contentTypeBreakdown: { type: string; count: number; avgEngagement: number }[];
 }
 
+export interface TikTokVideo {
+  id: string;
+  title: string;
+  video_description: string;
+  duration: number;
+  cover_image_url: string;
+  share_url: string;
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  view_count: number;
+  create_time: number;
+  top_comments?: string[];
+}
+
+export interface TikTokSummary {
+  displayName: string;
+  followerCount: number;
+  followingCount: number;
+  likesCount: number;
+  videoCount: number;
+  avatarUrl: string;
+  videos: TikTokVideo[];
+  averages: {
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    engagementRate: number;
+  };
+  topVideos: TikTokVideo[];
+}
+
 export interface ContentFormatStat {
   format: string;
   count: number;

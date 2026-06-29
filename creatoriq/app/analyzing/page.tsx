@@ -12,6 +12,7 @@ const STEPS = [
   { id: "analytics", label: "Fetching analytics data", sublabel: "Views, CTR, retention per video" },
   { id: "niche", label: "Researching your niche", sublabel: "Analysing top public videos in your space" },
   { id: "instagram", label: "Pulling Instagram data", sublabel: "Fetching posts, engagement, reach and insights" },
+  { id: "tiktok", label: "Pulling TikTok data", sublabel: "Fetching videos, views, engagement and comments" },
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
   { id: "rank", label: "Analysing top & bottom performers", sublabel: "Fetching comments from key videos" },
   { id: "save", label: "Generating your brief", sublabel: "Claude is combining all intelligence" },

@@ -13,7 +13,8 @@ import { generateContentBrief } from "@/lib/claude";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
 import { saveSnapshot } from "@/lib/snapshot";
 import { fetchInstagramData } from "@/lib/instagram";
-import type { YouTubeChannel, NicheSummary, InstagramSummary } from "@/types";
+import { fetchTikTokData, refreshTikTokToken } from "@/lib/tiktok";
+import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary } from "@/types";
 
 export const maxDuration = 300;
 
@@ -33,10 +34,11 @@ export async function GET(request: NextRequest) {
 
         const supabase = createAdminClient();
 
-        const [{ data: conn }, { data: userData }, { data: igConn }] = await Promise.all([
+        const [{ data: conn }, { data: userData }, { data: igConn }, { data: ttConn }] = await Promise.all([
           supabase.from("youtube_connections").select("*").eq("user_id", userId).single(),
           supabase.from("users").select("niche").eq("id", userId).single(),
           supabase.from("instagram_connections").select("*").eq("user_id", userId).maybeSingle(),
+          supabase.from("tiktok_connections").select("*").eq("user_id", userId).maybeSingle(),
         ]);
 
         if (!conn) { emit({ event: "error", message: "No YouTube connection found" }); return; }
@@ -97,6 +99,44 @@ export async function GET(request: NextRequest) {
           emit({ event: "step_done", step: "niche" });
         } else {
           emit({ event: "step_skip", step: "niche" });
+        }
+
+        // ── TikTok data (if connected) ───────────────────────────────────
+        let tikTokSummary: TikTokSummary | null = null;
+        if (ttConn) {
+          emit({ event: "step_start", step: "tiktok" });
+          try {
+            let ttToken: string = ttConn.access_token;
+            if (ttConn.token_expires_at && new Date(ttConn.token_expires_at) <= new Date()) {
+              if (ttConn.refresh_token) {
+                const refreshed = await refreshTikTokToken(ttConn.refresh_token);
+                if (refreshed) {
+                  ttToken = refreshed.access_token;
+                  await supabase.from("tiktok_connections").update({
+                    access_token: ttToken,
+                    token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+                    refresh_token: refreshed.refresh_token,
+                    refresh_token_expires_at: new Date(Date.now() + refreshed.refresh_expires_in * 1000).toISOString(),
+                  }).eq("id", ttConn.id);
+                }
+              }
+            }
+            tikTokSummary = await fetchTikTokData(
+              ttToken,
+              ttConn.display_name ?? "",
+              ttConn.follower_count ?? 0,
+              ttConn.following_count ?? 0,
+              ttConn.likes_count ?? 0,
+              ttConn.video_count ?? 0,
+              ttConn.avatar_url ?? "",
+              (done, total) => emit({ event: "tiktok_progress", done, total })
+            );
+            emit({ event: "step_done", step: "tiktok" });
+          } catch {
+            emit({ event: "step_skip", step: "tiktok" });
+          }
+        } else {
+          emit({ event: "step_skip", step: "tiktok" });
         }
 
         // ── Instagram data (if connected) ────────────────────────────────
@@ -162,6 +202,7 @@ export async function GET(request: NextRequest) {
             summary,
             total_videos: videoIds.length,
             instagram_summary: igSummary,
+            tiktok_summary: tikTokSummary,
           })
           .select("id")
           .single();
@@ -172,12 +213,12 @@ export async function GET(request: NextRequest) {
         }
 
         const [{ brief, autopsy }] = await Promise.all([
-          generateContentBrief(summary, nicheSummary, igSummary),
+          generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary),
           saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos }),
         ]);
         await supabase
           .from("analyses")
-          .update({ brief, autopsy, instagram_summary: igSummary })
+          .update({ brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary })
           .eq("id", analysis.id);
 
         emit({ event: "step_done", step: "save" });

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Zap, Search, ArrowRight, Camera, CheckCircle, AlertCircle } from "lucide-react";
+import { Zap, Search, ArrowRight, Camera, CheckCircle, AlertCircle, Music2 } from "lucide-react";
 
 const EXAMPLES = ["faith", "fitness", "finance", "productivity", "cooking", "travel", "gaming", "parenting"];
 
@@ -11,6 +11,13 @@ interface IGStatus {
   username?: string;
   followerCount?: number;
   profilePictureUrl?: string;
+}
+
+interface TTStatus {
+  connected: boolean;
+  displayName?: string;
+  followerCount?: number;
+  avatarUrl?: string;
 }
 
 export default function NichePage() {
@@ -39,13 +46,19 @@ function NichePageInner() {
   const [niche, setNiche] = useState("");
   const [loading, setLoading] = useState(false);
   const [igStatus, setIgStatus] = useState<IGStatus | null>(null);
+  const [ttStatus, setTtStatus] = useState<TTStatus | null>(null);
   const igError = searchParams.get("instagram_error");
+  const ttError = searchParams.get("tiktok_error");
 
   useEffect(() => {
     fetch("/api/instagram/status")
       .then((r) => r.json())
       .then(setIgStatus)
       .catch(() => setIgStatus({ connected: false }));
+    fetch("/api/tiktok/status")
+      .then((r) => r.json())
+      .then(setTtStatus)
+      .catch(() => setTtStatus({ connected: false }));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -122,10 +135,11 @@ function NichePageInner() {
             </div>
           </div>
 
-          <div className="mt-8 border-t border-[#1f1f22] pt-6">
+          <div className="mt-8 border-t border-[#1f1f22] pt-6 space-y-3">
             <p className="text-[11px] text-zinc-700 uppercase tracking-widest mb-3">Cross-platform intelligence</p>
+
             {igError && (
-              <div className="flex items-center gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 {igError === "no_instagram_business"
                   ? "Instagram account must be a Business or Creator account linked to a Facebook Page."
@@ -134,6 +148,7 @@ function NichePageInner() {
                   : "Instagram connection failed. Please try again."}
               </div>
             )}
+
             {igStatus?.connected ? (
               <div className="flex items-center gap-3 bg-[#111113] border border-[#27272a] rounded-lg px-4 py-3">
                 {igStatus.profilePictureUrl ? (
@@ -160,6 +175,44 @@ function NichePageInner() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">Connect Instagram</p>
                   <p className="text-xs text-zinc-600">Optional · Adds cross-platform audience insights to your brief</p>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors shrink-0" />
+              </a>
+            )}
+
+            {ttError && (
+              <div className="flex items-center gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                TikTok connection failed. Please try again.
+              </div>
+            )}
+
+            {ttStatus?.connected ? (
+              <div className="flex items-center gap-3 bg-[#111113] border border-[#27272a] rounded-lg px-4 py-3">
+                {ttStatus.avatarUrl ? (
+                  <img src={ttStatus.avatarUrl} alt={ttStatus.displayName} className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center">
+                    <Music2 className="w-4 h-4 text-white" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{ttStatus.displayName}</p>
+                  <p className="text-xs text-zinc-500">{ttStatus.followerCount?.toLocaleString()} followers · Connected</p>
+                </div>
+                <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+              </div>
+            ) : (
+              <a
+                href="/api/auth/tiktok"
+                className="flex items-center gap-3 bg-[#111113] border border-[#27272a] hover:border-[#ff3040]/40 rounded-lg px-4 py-3 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
+                  <Music2 className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">Connect TikTok</p>
+                  <p className="text-xs text-zinc-600">Optional · Adds short-form video signals to your brief</p>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors shrink-0" />
               </a>

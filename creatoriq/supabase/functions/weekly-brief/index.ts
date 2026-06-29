@@ -6,6 +6,10 @@ const YOUTUBE_CLIENT_ID = Deno.env.get("YOUTUBE_CLIENT_ID")!;
 const YOUTUBE_CLIENT_SECRET = Deno.env.get("YOUTUBE_CLIENT_SECRET")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET")!;
+const TIKTOK_CLIENT_KEY = Deno.env.get("TIKTOK_CLIENT_KEY")!;
+const TIKTOK_CLIENT_SECRET = Deno.env.get("TIKTOK_CLIENT_SECRET")!;
+const INSTAGRAM_APP_ID = Deno.env.get("INSTAGRAM_APP_ID")!;
+const INSTAGRAM_APP_SECRET = Deno.env.get("INSTAGRAM_APP_SECRET")!;
 
 const YT = "https://www.googleapis.com/youtube/v3";
 const YT_ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports";
@@ -320,7 +324,7 @@ function fmtSecs(s: number) {
   return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
 }
 
-function buildPrompt(summary: Record<string, unknown>, nicheSummary: Record<string, unknown> | null): string {
+function buildPrompt(summary: Record<string, unknown>, nicheSummary: Record<string, unknown> | null, igSummary: IgSummaryData | null = null, ttSummary: TikTokSummaryData | null = null): string {
   const { channel, averages, topPerformers, bottomPerformers, outliers, totalVideosAnalysed, dateRange } = summary as {
     channel: { title: string; handle?: string; subscriberCount: number };
     averages: { views: number; likes: number; comments: number; ctr: number; retentionRate: number };
@@ -382,6 +386,34 @@ TOP 5 NICHE TITLES
 ${n.titlePatterns.topTitles.map((t, i) => `${i + 1}. "${t}"`).join("\n")}`;
   }
 
+  if (igSummary) {
+    prompt += `
+
+INSTAGRAM INTELLIGENCE (@${igSummary.username})
+=========================================
+Followers: ${fmt(igSummary.followerCount)}
+Avg likes: ${fmt(igSummary.averages.likes)} | Avg comments: ${fmt(igSummary.averages.comments)} | Engagement rate: ${igSummary.averages.engagementRate}%
+
+TOP 10 INSTAGRAM POSTS BY ENGAGEMENT
+${igSummary.topPosts.map((p, i) => `${i + 1}. [${p.media_type}] ${(p.caption ?? "").slice(0, 100) || "(no caption)"} | Likes: ${fmt(p.like_count ?? 0)} | Comments: ${p.comments_count ?? 0} | Posted: ${p.timestamp.slice(0, 10)}`).join("\n")}`;
+  }
+
+  if (ttSummary) {
+    prompt += `
+
+TIKTOK INTELLIGENCE (${ttSummary.displayName})
+=========================================
+Followers: ${fmt(ttSummary.followerCount)} | Videos analysed: ${ttSummary.topVideos.length}
+Avg views: ${fmt(ttSummary.averages.views)} | Avg likes: ${fmt(ttSummary.averages.likes)} | Avg shares: ${fmt(ttSummary.averages.shares)} | Engagement rate: ${ttSummary.averages.engagementRate}%
+
+TOP 10 TIKTOK VIDEOS BY VIEWS
+${ttSummary.topVideos.map((v, i) => {
+  const title = v.title || (v.video_description ?? "").slice(0, 80) || "(untitled)";
+  const date = v.create_time ? new Date(v.create_time * 1000).toISOString().slice(0, 10) : "unknown";
+  return `${i + 1}. "${title}" — ${fmt(v.view_count ?? 0)} views | ${fmt(v.like_count ?? 0)} likes | ${fmt(v.share_count ?? 0)} shares | ${v.duration ?? 0}s | ${date}`;
+}).join("\n")}`;
+  }
+
   return prompt;
 }
 
@@ -396,7 +428,7 @@ async function callClaude(prompt: string) {
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      system: `You are an expert YouTube content strategist. Return a single JSON object — no markdown, no explanation, only valid JSON:
+      system: `You are an expert YouTube content strategist with cross-platform intelligence from Instagram and TikTok where available. Return a single JSON object — no markdown, no explanation, only valid JSON:
 {"brief":{"weeklyIdea":"string","rationale":"string","hook":"string","format":"string","estimatedPerformance":"string","keyTalkingPoints":["..."],"thumbnailDirection":"string","titleOptions":["..."]},"autopsy":{"overallTrend":"string","whatIsWorking":["..."],"whatIsNotWorking":["..."],"audienceInsights":"string","topPerformerPattern":"string","bottomPerformerPattern":"string","actionableAdvice":["..."]}}`,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -468,6 +500,119 @@ function buildContentBreakdown(topPerformers: ReturnType<typeof scoreVideos>["so
   })).sort((a, b) => b.avgScore - a.avgScore);
 }
 
+// ─── TikTok helpers ────────────────────────────────────────────────────────
+
+async function refreshTikTokToken(rt: string): Promise<{ access_token: string; expires_in: number; refresh_token: string; refresh_expires_in: number } | null> {
+  try {
+    const res = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_key: TIKTOK_CLIENT_KEY, client_secret: TIKTOK_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: rt }),
+    });
+    const d = await res.json();
+    return d.access_token ? d : null;
+  } catch { return null; }
+}
+
+interface TikTokVideoItem {
+  id: string; title?: string; video_description?: string; duration?: number;
+  like_count?: number; comment_count?: number; share_count?: number; view_count?: number; create_time?: number;
+}
+
+async function fetchTikTokVideos(token: string): Promise<TikTokVideoItem[]> {
+  const fields = "id,title,video_description,duration,like_count,comment_count,share_count,view_count,create_time";
+  const all: TikTokVideoItem[] = [];
+  let cursor = 0;
+  let hasMore = true;
+  while (hasMore && all.length < 50) {
+    const res = await fetch(`https://open.tiktokapis.com/v2/video/list/?fields=${fields}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ cursor, max_count: 20 }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.error?.code !== "ok") break;
+    all.push(...(d.data?.videos ?? []));
+    cursor = d.data?.cursor ?? 0;
+    hasMore = d.data?.has_more ?? false;
+    if (!d.data?.videos?.length) break;
+  }
+  return all;
+}
+
+interface TikTokSummaryData {
+  displayName: string; followerCount: number; videoCount: number;
+  averages: { views: number; likes: number; comments: number; shares: number; engagementRate: number };
+  topVideos: TikTokVideoItem[];
+}
+
+function buildTikTokSummaryData(videos: TikTokVideoItem[], displayName: string, followerCount: number, videoCount: number): TikTokSummaryData {
+  const n = videos.length || 1;
+  const avgViews = videos.reduce((s, v) => s + (v.view_count ?? 0), 0) / n;
+  const avgLikes = videos.reduce((s, v) => s + (v.like_count ?? 0), 0) / n;
+  const avgComments = videos.reduce((s, v) => s + (v.comment_count ?? 0), 0) / n;
+  const avgShares = videos.reduce((s, v) => s + (v.share_count ?? 0), 0) / n;
+  const engagementRate = followerCount > 0 ? ((avgLikes + avgComments + avgShares) / followerCount) * 100 : 0;
+  const topVideos = [...videos].sort((a, b) => (b.view_count ?? 0) - (a.view_count ?? 0)).slice(0, 10);
+  return {
+    displayName, followerCount, videoCount,
+    averages: {
+      views: Math.round(avgViews), likes: Math.round(avgLikes),
+      comments: Math.round(avgComments), shares: Math.round(avgShares),
+      engagementRate: Math.round(engagementRate * 100) / 100,
+    },
+    topVideos,
+  };
+}
+
+// ─── Instagram helpers ────────────────────────────────────────────────────
+
+const FB = "https://graph.facebook.com/v18.0";
+
+interface IgPostItem {
+  id: string; caption?: string; media_type: string; timestamp: string;
+  like_count?: number; comments_count?: number; permalink?: string;
+}
+
+async function fetchInstagramPosts(igUserId: string, pageToken: string): Promise<IgPostItem[]> {
+  const posts: IgPostItem[] = [];
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({ fields: "id,caption,media_type,timestamp,like_count,comments_count,permalink", limit: "50", access_token: pageToken });
+    if (cursor) params.set("after", cursor);
+    const res = await fetch(`${FB}/${igUserId}/media?${params}`);
+    const d = await res.json();
+    if (!res.ok || !d.data?.length) break;
+    posts.push(...d.data);
+    cursor = d.paging?.cursors?.after;
+    if (!d.paging?.next || posts.length >= 50) break;
+  } while (true);
+  return posts.slice(0, 50);
+}
+
+interface IgSummaryData {
+  username: string; followerCount: number;
+  averages: { likes: number; comments: number; engagementRate: number };
+  topPosts: IgPostItem[];
+}
+
+function buildIgSummaryData(posts: IgPostItem[], username: string, followerCount: number): IgSummaryData {
+  const n = posts.length || 1;
+  const avgLikes = posts.reduce((s, p) => s + (p.like_count ?? 0), 0) / n;
+  const avgComments = posts.reduce((s, p) => s + (p.comments_count ?? 0), 0) / n;
+  const engagementRate = followerCount > 0 ? ((avgLikes + avgComments) / followerCount) * 100 : 0;
+  const topPosts = [...posts].sort((a, b) => ((b.like_count ?? 0) + (b.comments_count ?? 0)) - ((a.like_count ?? 0) + (a.comments_count ?? 0))).slice(0, 10);
+  return { username, followerCount, averages: { likes: Math.round(avgLikes), comments: Math.round(avgComments), engagementRate: Math.round(engagementRate * 100) / 100 }, topPosts };
+}
+
+async function refreshIgToken(userToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${FB}/oauth/access_token?grant_type=fb_exchange_token&client_id=${INSTAGRAM_APP_ID}&client_secret=${INSTAGRAM_APP_SECRET}&fb_exchange_token=${userToken}`);
+    const d = await res.json();
+    return d.access_token ?? null;
+  } catch { return null; }
+}
+
 async function processCreator(
   conn: { id: string; user_id: string; refresh_token: string; access_token: string; token_expires_at: string; channel_id: string; channel_title: string; channel_handle?: string; channel_thumbnail?: string; subscriber_count: number; users: { niche?: string } },
   supabase: ReturnType<typeof createClient>
@@ -498,6 +643,53 @@ async function processCreator(
     const nicheIds = await searchNicheVideoIds(conn.users.niche, accessToken);
     const nicheVideos = await getNicheVideoDetails(nicheIds, accessToken);
     nicheSummary = processNicheData(nicheVideos as Record<string, unknown>[], conn.users.niche);
+  }
+
+  const [{ data: igConn }, { data: ttConn }] = await Promise.all([
+    supabase.from("instagram_connections").select("*").eq("user_id", conn.user_id).maybeSingle(),
+    supabase.from("tiktok_connections").select("*").eq("user_id", conn.user_id).maybeSingle(),
+  ]);
+
+  let igSummaryData: IgSummaryData | null = null;
+  if (igConn) {
+    try {
+      let pageToken = igConn.page_access_token;
+      if (igConn.token_expires_at && new Date(igConn.token_expires_at) <= new Date()) {
+        const refreshed = await refreshIgToken(igConn.user_access_token);
+        if (refreshed) {
+          pageToken = refreshed;
+          await supabase.from("instagram_connections").update({
+            page_access_token: pageToken,
+            token_expires_at: new Date(Date.now() + 5184000 * 1000).toISOString(),
+          }).eq("id", igConn.id);
+        }
+      }
+      const posts = await fetchInstagramPosts(igConn.ig_user_id, pageToken);
+      igSummaryData = buildIgSummaryData(posts, igConn.username ?? "", igConn.follower_count ?? 0);
+    } catch { /* skip on error */ }
+  }
+
+  let ttSummaryData: TikTokSummaryData | null = null;
+  if (ttConn) {
+    try {
+      let ttToken = ttConn.access_token;
+      if (ttConn.token_expires_at && new Date(ttConn.token_expires_at) <= new Date()) {
+        if (ttConn.refresh_token) {
+          const refreshed = await refreshTikTokToken(ttConn.refresh_token);
+          if (refreshed) {
+            ttToken = refreshed.access_token;
+            await supabase.from("tiktok_connections").update({
+              access_token: ttToken,
+              token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+              refresh_token: refreshed.refresh_token,
+              refresh_token_expires_at: new Date(Date.now() + refreshed.refresh_expires_in * 1000).toISOString(),
+            }).eq("id", ttConn.id);
+          }
+        }
+      }
+      const videos = await fetchTikTokVideos(ttToken);
+      ttSummaryData = buildTikTokSummaryData(videos, ttConn.display_name ?? "", ttConn.follower_count ?? 0, ttConn.video_count ?? 0);
+    } catch { /* skip on error */ }
   }
 
   const scored = scoreVideos(rawVideos as Record<string, unknown>[], analyticsMap);
@@ -532,7 +724,12 @@ async function processCreator(
     dateRange: scored.dateRange,
   };
 
-  const prompt = buildPrompt(summary as unknown as Record<string, unknown>, nicheSummary as unknown as Record<string, unknown> | null);
+  const prompt = buildPrompt(
+    summary as unknown as Record<string, unknown>,
+    nicheSummary as unknown as Record<string, unknown> | null,
+    igSummaryData,
+    ttSummaryData
+  );
   const { brief, autopsy } = await callClaude(prompt);
 
   const { data: analysis } = await supabase.from("analyses").insert({
@@ -543,6 +740,8 @@ async function processCreator(
     brief,
     autopsy,
     total_videos: videoIds.length,
+    instagram_summary: igSummaryData,
+    tiktok_summary: ttSummaryData,
     is_unread: true,
     generated_by: "scheduled",
   }).select("id").single();

@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary } from "@/types";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -96,9 +96,30 @@ ${topPosts.map((p, i) => `${i + 1}. [${p.media_type}] ${p.caption?.slice(0, 120)
    Likes: ${fmt(p.like_count)} | Comments: ${p.comments_count} | Reach: ${fmt(p.reach)} | Saved: ${fmt(p.saved)} | Posted: ${p.timestamp.slice(0, 10)}`).join("\n\n")}`;
 }
 
-const SYSTEM = `You are an expert YouTube content strategist. You will receive a creator's channel intelligence report and optionally niche intelligence data and Instagram performance data.
+function buildTikTokSection(tt: TikTokSummary): string {
+  const topVideos = tt.topVideos.slice(0, 10);
+  return `
+TIKTOK INTELLIGENCE (@${tt.displayName})
+=========================================
+Followers: ${fmt(tt.followerCount)} | Following: ${fmt(tt.followingCount)} | Total likes: ${fmt(tt.likesCount)} | Videos analysed: ${tt.videos.length}
 
-Use ALL available data sources to generate recommendations. The niche data tells you what's working broadly in the space; the channel data tells you what works specifically for this creator and their audience; the Instagram data reveals cross-platform audience patterns and what visual/short-form content resonates. Find the intersection — where the creator's strengths meet proven niche patterns, informed by Instagram engagement signals.
+TIKTOK AVERAGES
+Avg views: ${fmt(tt.averages.views)} | Avg likes: ${fmt(tt.averages.likes)} | Avg comments: ${fmt(tt.averages.comments)} | Avg shares: ${fmt(tt.averages.shares)}
+Engagement rate: ${tt.averages.engagementRate}%
+
+TOP 10 TIKTOK VIDEOS BY VIEWS
+${topVideos.map((v, i) => {
+    const comments = v.top_comments?.slice(0, 3).map((c) => `"${c.slice(0, 100)}"`).join(" | ") ?? "none";
+    const date = new Date(v.create_time * 1000).toISOString().slice(0, 10);
+    return `${i + 1}. "${v.title || v.video_description.slice(0, 80) || "(untitled)"}"
+   Views: ${fmt(v.view_count)} | Likes: ${fmt(v.like_count)} | Comments: ${v.comment_count} | Shares: ${fmt(v.share_count)} | Duration: ${v.duration}s | Posted: ${date}
+   Top comments: ${comments}`;
+  }).join("\n\n")}`;
+}
+
+const SYSTEM = `You are an expert YouTube content strategist. You will receive a creator's channel intelligence report and optionally niche intelligence data, Instagram performance data, and TikTok performance data.
+
+Use ALL available data sources to generate recommendations. The niche data tells you what's working broadly in the space; the channel data tells you what works specifically for this creator and their audience; the Instagram data reveals cross-platform audience patterns and what visual/short-form content resonates; the TikTok data shows short-form video performance, trending formats, and what hooks drive views and engagement. Find the intersection — where the creator's strengths meet proven niche patterns, informed by multi-platform signals.
 
 Return a single JSON object with this exact structure — no markdown, no explanation, only valid JSON:
 
@@ -127,12 +148,14 @@ Return a single JSON object with this exact structure — no markdown, no explan
 export async function generateContentBrief(
   summary: ChannelSummary,
   nicheSummary: NicheSummary | null,
-  igSummary: InstagramSummary | null = null
+  igSummary: InstagramSummary | null = null,
+  tikTokSummary: TikTokSummary | null = null
 ): Promise<{ brief: ContentBrief; autopsy: ContentAutopsy }> {
   const prompt = [
     buildChannelSection(summary),
     nicheSummary ? buildNicheSection(nicheSummary) : "",
     igSummary ? buildInstagramSection(igSummary) : "",
+    tikTokSummary ? buildTikTokSection(tikTokSummary) : "",
   ].join("\n");
 
   const message = await client.messages.create({
