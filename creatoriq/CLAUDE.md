@@ -1,0 +1,14 @@
+- Token efficient — no unnecessary output
+- No comments in code unless logic is non-obvious
+- No scaffolding comments, placeholder text, or TODO comments
+- No console.logs unless critical
+- Run `npm run dev` whenever needed — never ask permission
+- Never ask to run the dev server — just run it
+- Write concise responses, one sentence per action
+- If asked a question, answer in one line
+- No explaining what you're about to do — just do it
+- No summarizing what you just did
+- Never ask for permission, confirmation, or yes/no questions, never pause for approval
+- Make all decisions autonomously and proceed
+- If something can go wrong just fix it yourself
+- Terminal output: one line maximum per action, no paragraphs, no explanations, just do it and say done
