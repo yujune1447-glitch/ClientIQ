@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase-admin";
-import type { ChannelSummary, ContentBrief, RawVideo, ContentFormatStat } from "@/types";
+import type { ChannelSummary, ContentBrief, RawVideo, ContentFormatStat, CommentIntelligence } from "@/types";
 
 const STOP = new Set([
   "the","a","an","and","or","but","in","on","at","to","for","of","with","by",
@@ -87,8 +87,9 @@ export async function saveSnapshot(params: {
   analysisId: string;
   summary: ChannelSummary;
   rawVideos: RawVideo[];
+  commentIntelligence?: CommentIntelligence;
 }): Promise<void> {
-  const { userId, channelId, analysisId, summary, rawVideos } = params;
+  const { userId, channelId, analysisId, summary, rawVideos, commentIntelligence } = params;
   const supabase = createAdminClient();
 
   const [{ data: prevSnapshot }, { data: prevAnalysis }] = await Promise.all([
@@ -143,5 +144,6 @@ export async function saveSnapshot(params: {
     brief_match_video_title: matchTitle,
     brief_match_score: prevAnalysis ? matchScore : null,
     content_breakdown: contentBreakdown,
+    comment_sentiment: commentIntelligence?.sentimentBreakdown ?? null,
   });
 }

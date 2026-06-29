@@ -201,6 +201,48 @@ export interface TikTokSummary {
   topVideos: TikTokVideo[];
 }
 
+export interface CommentTheme {
+  name: string;
+  description: string;
+  commentCount: number;
+  exampleComments: string[];
+  sentiment: "positive" | "mixed" | "negative";
+}
+
+export interface VideoIdeaFromComments {
+  idea: string;
+  sourceComment: string;
+  estimatedDemand: "high" | "medium" | "low";
+}
+
+export interface AudiencePersona {
+  type: string;
+  description: string;
+  cues: string[];
+}
+
+export interface CommentIntelligence {
+  totalCommentsAnalysed: number;
+  themes: CommentTheme[];
+  videoIdeas: VideoIdeaFromComments[];
+  emotionalSignals: {
+    excited: number;
+    grateful: number;
+    curious: number;
+    confused: number;
+    critical: number;
+    requesting: number;
+  };
+  sentimentBreakdown: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  audiencePersonas: AudiencePersona[];
+  keyInsight: string;
+  generatedAt: string;
+}
+
 export interface ContentFormatStat {
   format: string;
   count: number;
@@ -228,5 +270,6 @@ export interface ChannelSnapshot {
   brief_match_video_title: string | null;
   brief_match_score: number | null;
   content_breakdown: ContentFormatStat[] | null;
+  comment_sentiment: { positive: number; neutral: number; negative: number } | null;
   created_at: string;
 }

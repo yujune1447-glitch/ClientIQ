@@ -10,6 +10,7 @@ import {
 } from "@/lib/youtube";
 import { scoreVideos, buildSummary } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
+import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
 import { saveSnapshot } from "@/lib/snapshot";
 import { fetchInstagramData } from "@/lib/instagram";
@@ -212,13 +213,18 @@ export async function GET(request: NextRequest) {
           return;
         }
 
-        const [{ brief, autopsy }] = await Promise.all([
+        emit({ event: "step_start", step: "comments_intel" });
+        const [{ brief, autopsy }, commentIntelligence] = await Promise.all([
           generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary),
-          saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos }),
+          analyzeComments(summary, tikTokSummary),
         ]);
+        emit({ event: "step_done", step: "comments_intel" });
+
+        await saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos, commentIntelligence });
+
         await supabase
           .from("analyses")
-          .update({ brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary })
+          .update({ brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary, comment_intelligence: commentIntelligence })
           .eq("id", analysis.id);
 
         emit({ event: "step_done", step: "save" });

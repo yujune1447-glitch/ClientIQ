@@ -15,6 +15,7 @@ const STEPS = [
   { id: "tiktok", label: "Pulling TikTok data", sublabel: "Fetching videos, views, engagement and comments" },
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
   { id: "rank", label: "Analysing top & bottom performers", sublabel: "Fetching comments from key videos" },
+  { id: "comments_intel", label: "Analysing audience comments", sublabel: "Clustering themes, surfacing ideas, mapping emotional signals" },
   { id: "save", label: "Generating your brief", sublabel: "Claude is combining all intelligence" },
 ];
 

@@ -81,6 +81,53 @@ export function GrowthSection({ snapshots }: { snapshots: ChannelSnapshot[] }) {
         <span className="text-xs text-zinc-600 ml-1">{sorted.length} snapshot{sorted.length !== 1 ? "s" : ""}</span>
       </div>
 
+      {/* Sentiment trend (if data exists) */}
+      {(() => {
+        const withSentiment = sorted.filter((s) => s.comment_sentiment != null);
+        if (withSentiment.length < 2) return null;
+        const posValues = withSentiment.map((s) => s.comment_sentiment!.positive);
+        const negValues = withSentiment.map((s) => s.comment_sentiment!.negative);
+        const latest = withSentiment[withSentiment.length - 1].comment_sentiment!;
+        const prev = withSentiment[withSentiment.length - 2].comment_sentiment!;
+        const latestScore = latest.positive - latest.negative;
+        const prevScore = prev.positive - prev.negative;
+        const diff = latestScore - prevScore;
+        return (
+          <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-4 flex items-center gap-4">
+            <div>
+              <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1">Audience sentiment trend</p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="font-semibold text-emerald-500">{latest.positive}%</span>
+                  <span className="text-zinc-600">positive</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                  <span className="font-semibold text-red-500">{latest.negative}%</span>
+                  <span className="text-zinc-600">negative</span>
+                </div>
+                {diff !== 0 && (
+                  <span className={`text-xs font-medium ${diff > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                    {diff > 0 ? "↑" : "↓"} {Math.abs(diff)}pts
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="ml-auto flex gap-4">
+              <div className="flex flex-col items-end gap-1">
+                <p className="text-[10px] text-zinc-700">Positive</p>
+                <Sparkline values={posValues} color="#10b981" />
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <p className="text-[10px] text-zinc-700">Negative</p>
+                <Sparkline values={negValues} color="#ef4444" />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Delta cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[

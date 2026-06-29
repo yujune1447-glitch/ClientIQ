@@ -8,7 +8,8 @@ import {
 import { createAdminClient } from "@/lib/supabase-admin";
 import { MarkRead } from "@/app/components/MarkRead";
 import { GrowthSection } from "@/app/components/GrowthSection";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot, InstagramSummary, TikTokSummary } from "@/types";
+import { CommentIntelligenceSection } from "@/app/components/CommentIntelligenceSection";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence } from "@/types";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -51,6 +52,7 @@ export default async function DashboardPage({
   const autopsy = analysis.autopsy as ContentAutopsy;
   const igSummary = (analysis.instagram_summary ?? null) as InstagramSummary | null;
   const tikTokSummary = (analysis.tiktok_summary ?? null) as TikTokSummary | null;
+  const commentIntel = (analysis.comment_intelligence ?? null) as CommentIntelligence | null;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
   const isUnread = analysis.is_unread === true;
   const isScheduled = analysis.generated_by === "scheduled";
@@ -261,6 +263,11 @@ export default async function DashboardPage({
             <VideoList label="Bottom performers" videos={bottomPerformers} variant="bottom" />
           </div>
         </section>
+
+        {/* Comment intelligence */}
+        {commentIntel && commentIntel.themes.length > 0 && (
+          <CommentIntelligenceSection intel={commentIntel} />
+        )}
 
         {/* Growth tracking */}
         <GrowthSection snapshots={channelSnapshots} />
