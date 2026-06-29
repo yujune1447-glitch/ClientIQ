@@ -3,12 +3,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   Zap, TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
-  MessageSquare, Lightbulb, Target, BarChart2, RefreshCw, Bell,
+  MessageSquare, Lightbulb, Target, BarChart2, RefreshCw, Bell, Camera, Heart,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { MarkRead } from "@/app/components/MarkRead";
 import { GrowthSection } from "@/app/components/GrowthSection";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot } from "@/types";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot, InstagramSummary } from "@/types";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -49,6 +49,7 @@ export default async function DashboardPage({
   const summary = analysis.summary as ChannelSummary;
   const brief = analysis.brief as ContentBrief;
   const autopsy = analysis.autopsy as ContentAutopsy;
+  const igSummary = (analysis.instagram_summary ?? null) as InstagramSummary | null;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
   const isUnread = analysis.is_unread === true;
   const isScheduled = analysis.generated_by === "scheduled";
@@ -262,6 +263,96 @@ export default async function DashboardPage({
 
         {/* Growth tracking */}
         <GrowthSection snapshots={channelSnapshots} />
+
+        {/* Instagram */}
+        {igSummary ? (
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Camera className="w-4 h-4 text-[#ff3040]" />
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-400">Instagram Intelligence</h2>
+              <span className="text-xs text-zinc-600 ml-1">@{igSummary.username}</span>
+            </div>
+
+            <div className="grid sm:grid-cols-4 gap-3 mb-4">
+              {[
+                { label: "Followers", value: fmt(igSummary.followerCount) },
+                { label: "Avg likes", value: fmt(igSummary.averages.likes) },
+                { label: "Avg reach", value: fmt(igSummary.averages.reach) },
+                { label: "Engagement rate", value: `${igSummary.averages.engagementRate}%` },
+              ].map((s) => (
+                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
+                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
+                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6">
+              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-4">Top posts by engagement</p>
+              <div className="space-y-2">
+                {igSummary.topPosts.slice(0, 5).map((post, i) => (
+                  <a
+                    key={post.id}
+                    href={post.permalink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 hover:bg-[#1a1a1d] rounded-lg px-3 py-2.5 transition-colors group"
+                  >
+                    <span className="text-xs font-mono text-zinc-600 w-5 shrink-0">#{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors">
+                        {post.caption?.slice(0, 80) || "(no caption)"}
+                      </p>
+                      <p className="text-[11px] text-zinc-600">{post.media_type} · {post.timestamp.slice(0, 10)}</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-3 h-3" />{fmt(post.like_count)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />{post.comments_count}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Eye className="w-3 h-3" />{fmt(post.reach)}
+                      </span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+              {igSummary.contentTypeBreakdown.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-[#1f1f22] flex flex-wrap gap-3">
+                  {igSummary.contentTypeBreakdown.map((t) => (
+                    <div key={t.type} className="flex items-center gap-2 text-xs text-zinc-500">
+                      <span className="text-zinc-400 font-medium">{t.type}</span>
+                      <span>{t.count} posts</span>
+                      <span>·</span>
+                      <span>{fmt(t.avgEngagement)} avg engagement</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : (
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Camera className="w-4 h-4 text-zinc-700" />
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-700">Instagram</h2>
+            </div>
+            <a
+              href="/api/auth/instagram"
+              className="flex items-center gap-4 bg-[#111113] border border-[#1f1f22] hover:border-[#27272a] rounded-xl p-5 transition-colors group"
+            >
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center shrink-0">
+                <Camera className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">Connect your Instagram</p>
+                <p className="text-xs text-zinc-700">Add cross-platform audience signals to your next brief</p>
+              </div>
+            </a>
+          </section>
+        )}
 
         {/* Footer stats */}
         <div className="border-t border-[#1f1f22] pt-6 flex flex-wrap gap-6 pb-10">

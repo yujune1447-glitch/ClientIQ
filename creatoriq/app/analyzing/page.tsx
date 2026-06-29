@@ -2,18 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, CheckCircle, Loader2, PlayCircle, AlertCircle } from "lucide-react";
+import { Zap, CheckCircle, Loader2, PlayCircle, AlertCircle, Minus } from "lucide-react";
 
-type StepStatus = "pending" | "active" | "complete";
+type StepStatus = "pending" | "active" | "complete" | "skipped";
 
 const STEPS = [
   { id: "connect", label: "Connected to YouTube", sublabel: "OAuth verified" },
   { id: "pull", label: "Pulling channel history", sublabel: "Fetching all videos and metadata" },
   { id: "analytics", label: "Fetching analytics data", sublabel: "Views, CTR, retention per video" },
   { id: "niche", label: "Researching your niche", sublabel: "Analysing top public videos in your space" },
+  { id: "instagram", label: "Pulling Instagram data", sublabel: "Fetching posts, engagement, reach and insights" },
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
   { id: "rank", label: "Analysing top & bottom performers", sublabel: "Fetching comments from key videos" },
-  { id: "save", label: "Generating your brief", sublabel: "Claude is combining channel + niche intelligence" },
+  { id: "save", label: "Generating your brief", sublabel: "Claude is combining all intelligence" },
 ];
 
 export default function AnalyzingPage() {
@@ -37,8 +38,10 @@ export default function AnalyzingPage() {
           setStatuses((prev) => ({ ...prev, [msg.step as string]: "active" }));
           break;
         case "step_done":
-        case "step_skip":
           setStatuses((prev) => ({ ...prev, [msg.step as string]: "complete" }));
+          break;
+        case "step_skip":
+          setStatuses((prev) => ({ ...prev, [msg.step as string]: "skipped" }));
           break;
         case "videos_found":
           setVideoCount(msg.count as number);
@@ -47,7 +50,11 @@ export default function AnalyzingPage() {
           setDetailsProgress({ current: msg.current as number, total: msg.total as number });
           break;
         case "complete":
-          setStatuses(() => Object.fromEntries(STEPS.map((s) => [s.id, "complete"])));
+          setStatuses((prev) =>
+            Object.fromEntries(
+              STEPS.map((s) => [s.id, prev[s.id] === "skipped" ? "skipped" : "complete"])
+            )
+          );
           setDone(true);
           source.close();
           router.push(`/dashboard?id=${msg.analysisId}`);
@@ -136,12 +143,16 @@ export default function AnalyzingPage() {
                       ? "bg-[#1a1014] border-[#ff3040]/30"
                       : status === "complete"
                       ? "bg-[#111113] border-[#1f1f22]"
+                      : status === "skipped"
+                      ? "bg-[#0d0d0f] border-[#1a1a1d] opacity-50"
                       : "border-transparent opacity-30"
                   }`}
                 >
                   <div className="mt-0.5 shrink-0">
                     {status === "complete" ? (
                       <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    ) : status === "skipped" ? (
+                      <Minus className="w-4 h-4 text-zinc-600" />
                     ) : status === "active" ? (
                       <Loader2 className="w-4 h-4 text-[#ff3040] animate-spin" />
                     ) : (
@@ -149,10 +160,13 @@ export default function AnalyzingPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${status === "pending" ? "text-zinc-600" : "text-white"}`}>
+                    <p className={`text-sm font-medium ${status === "pending" ? "text-zinc-600" : status === "skipped" ? "text-zinc-600" : "text-white"}`}>
                       {step.label}
                     </p>
-                    {status !== "pending" && (
+                    {status === "skipped" && (
+                      <p className="text-xs text-zinc-700 mt-0.5">Not connected — skipped</p>
+                    )}
+                    {status !== "pending" && status !== "skipped" && (
                       <p className="text-xs text-zinc-500 mt-0.5">{step.sublabel}</p>
                     )}
                   </div>

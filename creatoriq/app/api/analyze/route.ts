@@ -12,7 +12,8 @@ import { scoreVideos, buildSummary } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
 import { saveSnapshot } from "@/lib/snapshot";
-import type { YouTubeChannel, NicheSummary } from "@/types";
+import { fetchInstagramData } from "@/lib/instagram";
+import type { YouTubeChannel, NicheSummary, InstagramSummary } from "@/types";
 
 export const maxDuration = 300;
 
@@ -32,9 +33,10 @@ export async function GET(request: NextRequest) {
 
         const supabase = createAdminClient();
 
-        const [{ data: conn }, { data: userData }] = await Promise.all([
+        const [{ data: conn }, { data: userData }, { data: igConn }] = await Promise.all([
           supabase.from("youtube_connections").select("*").eq("user_id", userId).single(),
           supabase.from("users").select("niche").eq("id", userId).single(),
+          supabase.from("instagram_connections").select("*").eq("user_id", userId).maybeSingle(),
         ]);
 
         if (!conn) { emit({ event: "error", message: "No YouTube connection found" }); return; }
@@ -97,6 +99,28 @@ export async function GET(request: NextRequest) {
           emit({ event: "step_skip", step: "niche" });
         }
 
+        // ── Instagram data (if connected) ────────────────────────────────
+        let igSummary: InstagramSummary | null = null;
+        if (igConn) {
+          emit({ event: "step_start", step: "instagram" });
+          try {
+            igSummary = await fetchInstagramData(
+              igConn.ig_user_id,
+              igConn.page_access_token,
+              igConn.follower_count ?? 0,
+              igConn.username ?? "",
+              igConn.media_count ?? 0,
+              igConn.profile_picture_url ?? "",
+              (done, total) => emit({ event: "instagram_progress", done, total })
+            );
+            emit({ event: "step_done", step: "instagram" });
+          } catch {
+            emit({ event: "step_skip", step: "instagram" });
+          }
+        } else {
+          emit({ event: "step_skip", step: "instagram" });
+        }
+
         // ── Score + rank all videos (single pass) ─────────────────────────
         emit({ event: "step_start", step: "process" });
         const channelInfo: YouTubeChannel = {
@@ -137,6 +161,7 @@ export async function GET(request: NextRequest) {
             raw_videos: rawVideos,
             summary,
             total_videos: videoIds.length,
+            instagram_summary: igSummary,
           })
           .select("id")
           .single();
@@ -147,10 +172,13 @@ export async function GET(request: NextRequest) {
         }
 
         const [{ brief, autopsy }] = await Promise.all([
-          generateContentBrief(summary, nicheSummary),
+          generateContentBrief(summary, nicheSummary, igSummary),
           saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos }),
         ]);
-        await supabase.from("analyses").update({ brief, autopsy }).eq("id", analysis.id);
+        await supabase
+          .from("analyses")
+          .update({ brief, autopsy, instagram_summary: igSummary })
+          .eq("id", analysis.id);
 
         emit({ event: "step_done", step: "save" });
         emit({ event: "complete", analysisId: analysis.id });

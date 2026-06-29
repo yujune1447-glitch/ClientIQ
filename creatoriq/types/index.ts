@@ -135,6 +135,39 @@ export interface Analysis {
   createdAt: string;
 }
 
+export interface InstagramPost {
+  id: string;
+  caption: string;
+  media_type: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+  timestamp: string;
+  like_count: number;
+  comments_count: number;
+  media_url: string;
+  permalink: string;
+  impressions?: number;
+  reach?: number;
+  engagement?: number;
+  saved?: number;
+  video_views?: number;
+}
+
+export interface InstagramSummary {
+  username: string;
+  followerCount: number;
+  mediaCount: number;
+  profilePictureUrl: string;
+  posts: (InstagramPost & { impressions: number; reach: number; engagement: number; saved: number })[];
+  averages: {
+    likes: number;
+    comments: number;
+    reach: number;
+    engagement: number;
+    engagementRate: number;
+  };
+  topPosts: (InstagramPost & { impressions: number; reach: number; engagement: number; saved: number })[];
+  contentTypeBreakdown: { type: string; count: number; avgEngagement: number }[];
+}
+
 export interface ContentFormatStat {
   format: string;
   count: number;

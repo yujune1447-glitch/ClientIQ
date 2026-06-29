@@ -1,13 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Zap, Search, ArrowRight } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Zap, Search, ArrowRight, Camera, CheckCircle, AlertCircle } from "lucide-react";
 
 const EXAMPLES = ["faith", "fitness", "finance", "productivity", "cooking", "travel", "gaming", "parenting"];
 
+interface IGStatus {
+  connected: boolean;
+  username?: string;
+  followerCount?: number;
+  profilePictureUrl?: string;
+}
+
 export default function NichePage() {
+  return (
+    <Suspense>
+      <NichePageInner />
+    </Suspense>
+  );
+}
+
+function NichePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     fetch("/api/auth/refresh").then(async (res) => {
@@ -19,8 +35,18 @@ export default function NichePage() {
       }
     });
   }, [router]);
+
   const [niche, setNiche] = useState("");
   const [loading, setLoading] = useState(false);
+  const [igStatus, setIgStatus] = useState<IGStatus | null>(null);
+  const igError = searchParams.get("instagram_error");
+
+  useEffect(() => {
+    fetch("/api/instagram/status")
+      .then((r) => r.json())
+      .then(setIgStatus)
+      .catch(() => setIgStatus({ connected: false }));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +120,50 @@ export default function NichePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mt-8 border-t border-[#1f1f22] pt-6">
+            <p className="text-[11px] text-zinc-700 uppercase tracking-widest mb-3">Cross-platform intelligence</p>
+            {igError && (
+              <div className="flex items-center gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-3">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {igError === "no_instagram_business"
+                  ? "Instagram account must be a Business or Creator account linked to a Facebook Page."
+                  : igError === "no_facebook_page"
+                  ? "No Facebook Page found. Link your Instagram to a Facebook Page in Meta settings."
+                  : "Instagram connection failed. Please try again."}
+              </div>
+            )}
+            {igStatus?.connected ? (
+              <div className="flex items-center gap-3 bg-[#111113] border border-[#27272a] rounded-lg px-4 py-3">
+                {igStatus.profilePictureUrl ? (
+                  <img src={igStatus.profilePictureUrl} alt={igStatus.username} className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center">
+                    <Camera className="w-4 h-4 text-white" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">@{igStatus.username}</p>
+                  <p className="text-xs text-zinc-500">{igStatus.followerCount?.toLocaleString()} followers · Connected</p>
+                </div>
+                <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+              </div>
+            ) : (
+              <a
+                href="/api/auth/instagram"
+                className="flex items-center gap-3 bg-[#111113] border border-[#27272a] hover:border-[#ff3040]/40 rounded-lg px-4 py-3 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center shrink-0">
+                  <Camera className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">Connect Instagram</p>
+                  <p className="text-xs text-zinc-600">Optional · Adds cross-platform audience insights to your brief</p>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors shrink-0" />
+              </a>
+            )}
           </div>
         </div>
       </main>
