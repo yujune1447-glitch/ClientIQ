@@ -10,9 +10,10 @@ const STEPS = [
   { id: "connect", label: "Connected to YouTube", sublabel: "OAuth verified" },
   { id: "pull", label: "Pulling channel history", sublabel: "Fetching all videos and metadata" },
   { id: "analytics", label: "Fetching analytics data", sublabel: "Views, CTR, retention per video" },
+  { id: "niche", label: "Researching your niche", sublabel: "Analysing top public videos in your space" },
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
   { id: "rank", label: "Analysing top & bottom performers", sublabel: "Fetching comments from key videos" },
-  { id: "save", label: "Preparing your brief", sublabel: "Compressing summary for AI analysis" },
+  { id: "save", label: "Generating your brief", sublabel: "Claude is combining channel + niche intelligence" },
 ];
 
 export default function AnalyzingPage() {
@@ -36,6 +37,7 @@ export default function AnalyzingPage() {
           setStatuses((prev) => ({ ...prev, [msg.step as string]: "active" }));
           break;
         case "step_done":
+        case "step_skip":
           setStatuses((prev) => ({ ...prev, [msg.step as string]: "complete" }));
           break;
         case "videos_found":
@@ -51,8 +53,13 @@ export default function AnalyzingPage() {
           router.push(`/dashboard?id=${msg.analysisId}`);
           break;
         case "error":
-          setError(msg.message as string);
-          source.close();
+          if (msg.message === "needs_reauth") {
+            source.close();
+            router.replace("/api/auth/youtube");
+          } else {
+            setError(msg.message as string);
+            source.close();
+          }
           break;
       }
     };

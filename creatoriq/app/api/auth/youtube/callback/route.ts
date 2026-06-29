@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id,channel_id" }
   );
 
-  const response = NextResponse.redirect(`${APP_URL}/analyzing`);
+  const response = NextResponse.redirect(`${APP_URL}/niche`);
   response.cookies.set("user_id", user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

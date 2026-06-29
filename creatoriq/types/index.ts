@@ -94,6 +94,37 @@ export interface ContentAutopsy {
   actionableAdvice: string[];
 }
 
+export interface NicheTopVideo {
+  title: string;
+  views: number;
+  durationSeconds: number;
+  description: string;
+}
+
+export interface NicheSummary {
+  niche: string;
+  videosAnalysed: number;
+  titlePatterns: {
+    commonFormats: string[];
+    powerWords: string[];
+    avgTitleLength: number;
+    topTitles: string[];
+  };
+  lengthInsights: {
+    medianDurationSeconds: number;
+    topPerformerRangeSeconds: [number, number];
+    recommendation: string;
+  };
+  viewBenchmarks: {
+    median: number;
+    topQuartile: number;
+    viral: number;
+  };
+  topicClusters: string[];
+  hookPatterns: string[];
+  topPerformers: NicheTopVideo[];
+}
+
 export interface Analysis {
   id: string;
   userId: string;
@@ -102,4 +133,34 @@ export interface Analysis {
   brief: ContentBrief;
   autopsy: ContentAutopsy;
   createdAt: string;
+}
+
+export interface ContentFormatStat {
+  format: string;
+  count: number;
+  avgScore: number;
+  avgViews: number;
+}
+
+export interface ChannelSnapshot {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  analysis_id: string;
+  subscriber_count: number;
+  avg_ctr: number;
+  avg_retention: number;
+  avg_views_per_video: number;
+  total_videos_analysed: number;
+  top_video_id: string | null;
+  top_video_title: string | null;
+  top_video_views: number | null;
+  top_video_score: number | null;
+  top_video_published_at: string | null;
+  new_videos_count: number;
+  brief_followed: boolean | null;
+  brief_match_video_title: string | null;
+  brief_match_score: number | null;
+  content_breakdown: ContentFormatStat[] | null;
+  created_at: string;
 }

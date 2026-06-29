@@ -1,21 +1,23 @@
 import type { RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel } from "@/types";
 
-export function processChannelData(
+interface ScoredResult {
+  scored: VideoWithScore[];
+  averages: ChannelSummary["averages"];
+  outliers: VideoWithScore[];
+  dateRange: { from: string; to: string };
+}
+
+export function scoreVideos(
   rawVideos: RawVideo[],
-  analyticsMap: Map<string, VideoAnalytics>,
-  commentsMap: Map<string, string[]>,
-  channel: YouTubeChannel
-): ChannelSummary {
+  analyticsMap: Map<string, VideoAnalytics>
+): ScoredResult {
   const videos: VideoWithScore[] = rawVideos.map((raw) => {
     const a = analyticsMap.get(raw.id);
     return {
       id: raw.id,
       title: raw.snippet.title,
       publishedAt: raw.snippet.publishedAt,
-      thumbnail:
-        raw.snippet.thumbnails.medium?.url ??
-        raw.snippet.thumbnails.default?.url ??
-        "",
+      thumbnail: raw.snippet.thumbnails.medium?.url ?? raw.snippet.thumbnails.default?.url ?? "",
       viewCount: parseInt(raw.statistics.viewCount ?? "0"),
       likeCount: parseInt(raw.statistics.likeCount ?? "0"),
       commentCount: parseInt(raw.statistics.commentCount ?? "0"),
@@ -30,15 +32,14 @@ export function processChannelData(
   });
 
   const n = videos.length;
-  const sum = (fn: (v: VideoWithScore) => number) => videos.reduce((s, v) => s + fn(v), 0);
 
-  const avgViews = sum((v) => v.viewCount) / n;
-  const avgLikes = sum((v) => v.likeCount) / n;
-  const avgComments = sum((v) => v.commentCount) / n;
+  const avgViews = videos.reduce((s, v) => s + v.viewCount, 0) / n;
+  const avgLikes = videos.reduce((s, v) => s + v.likeCount, 0) / n;
+  const avgComments = videos.reduce((s, v) => s + v.commentCount, 0) / n;
 
   const withCtr = videos.filter((v) => (v.ctr ?? 0) > 0);
   const withRetention = videos.filter((v) => (v.averageViewPercentage ?? 0) > 0);
-  const avgCtr = withCtr.length ? sum((v) => v.ctr ?? 0) / withCtr.length : 0;
+  const avgCtr = withCtr.length ? withCtr.reduce((s, v) => s + (v.ctr ?? 0), 0) / withCtr.length : 0;
   const avgRetention = withRetention.length
     ? withRetention.reduce((s, v) => s + (v.averageViewPercentage ?? 0), 0) / withRetention.length
     : 0;
@@ -52,16 +53,8 @@ export function processChannelData(
   }
 
   const sorted = [...videos].sort((a, b) => b.performanceScore - a.performanceScore);
-  const topPerformers = sorted.slice(0, 10).map((v) => ({
-    ...v,
-    topComments: commentsMap.get(v.id) ?? [],
-  }));
-  const bottomPerformers = sorted
-    .slice(-10)
-    .reverse()
-    .map((v) => ({ ...v, topComments: commentsMap.get(v.id) ?? [] }));
 
-  const variance = sum((v) => Math.pow(v.viewCount - avgViews, 2)) / n;
+  const variance = videos.reduce((s, v) => s + Math.pow(v.viewCount - avgViews, 2), 0) / n;
   const stdDev = Math.sqrt(variance);
   const outliers = videos
     .filter((v) => v.viewCount > avgViews + 2 * stdDev)
@@ -71,7 +64,7 @@ export function processChannelData(
   const dates = videos.map((v) => v.publishedAt).sort();
 
   return {
-    channel,
+    scored: sorted,
     averages: {
       views: Math.round(avgViews),
       likes: Math.round(avgLikes),
@@ -79,10 +72,27 @@ export function processChannelData(
       ctr: Math.round(avgCtr * 100) / 100,
       retentionRate: Math.round(avgRetention * 100) / 100,
     },
-    topPerformers,
-    bottomPerformers,
     outliers,
-    totalVideosAnalysed: n,
     dateRange: { from: dates[0], to: dates[dates.length - 1] },
+  };
+}
+
+export function buildSummary(
+  result: ScoredResult,
+  commentsMap: Map<string, string[]>,
+  channel: YouTubeChannel
+): ChannelSummary {
+  const { scored, averages, outliers, dateRange } = result;
+
+  const attach = (v: VideoWithScore) => ({ ...v, topComments: commentsMap.get(v.id) ?? [] });
+
+  return {
+    channel,
+    averages,
+    topPerformers: scored.slice(0, 10).map(attach),
+    bottomPerformers: scored.slice(-10).reverse().map(attach),
+    outliers,
+    totalVideosAnalysed: scored.length,
+    dateRange,
   };
 }

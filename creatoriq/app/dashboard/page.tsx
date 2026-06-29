@@ -3,10 +3,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   Zap, TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
-  MessageSquare, Lightbulb, Target, BarChart2, RefreshCw,
+  MessageSquare, Lightbulb, Target, BarChart2, RefreshCw, Bell,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase-admin";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore } from "@/types";
+import { MarkRead } from "@/app/components/MarkRead";
+import { GrowthSection } from "@/app/components/GrowthSection";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot } from "@/types";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -37,12 +39,10 @@ export default async function DashboardPage({
   }
 
   const supabase = createAdminClient();
-  const { data: analysis } = await supabase
-    .from("analyses")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
+  const [{ data: analysis }, { data: snapshots }] = await Promise.all([
+    supabase.from("analyses").select("*").eq("id", id).eq("user_id", userId).single(),
+    supabase.from("channel_snapshots").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
+  ]);
 
   if (!analysis) redirect("/");
 
@@ -50,9 +50,19 @@ export default async function DashboardPage({
   const brief = analysis.brief as ContentBrief;
   const autopsy = analysis.autopsy as ContentAutopsy;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
+  const isUnread = analysis.is_unread === true;
+  const isScheduled = analysis.generated_by === "scheduled";
+  const channelSnapshots = (snapshots ?? []) as ChannelSnapshot[];
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
+      {isUnread && <MarkRead analysisId={id} />}
+      {isUnread && isScheduled && (
+        <div className="bg-[#1a1014] border-b border-[#ff3040]/30 px-6 py-2.5 flex items-center justify-center gap-2">
+          <Bell className="w-3.5 h-3.5 text-[#ff3040]" />
+          <p className="text-xs text-zinc-300">Your weekly brief was automatically generated. New intelligence every Monday.</p>
+        </div>
+      )}
       <nav className="border-b border-[#1f1f22] px-6 py-4 sticky top-0 bg-[#09090b]/95 backdrop-blur-sm z-10">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -62,7 +72,7 @@ export default async function DashboardPage({
             <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/api/auth/youtube" className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors">
+            <Link href="/niche" className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors">
               <RefreshCw className="w-3.5 h-3.5" />
               Re-analyse
             </Link>
@@ -249,6 +259,9 @@ export default async function DashboardPage({
             <VideoList label="Bottom performers" videos={bottomPerformers} variant="bottom" />
           </div>
         </section>
+
+        {/* Growth tracking */}
+        <GrowthSection snapshots={channelSnapshots} />
 
         {/* Footer stats */}
         <div className="border-t border-[#1f1f22] pt-6 flex flex-wrap gap-6 pb-10">

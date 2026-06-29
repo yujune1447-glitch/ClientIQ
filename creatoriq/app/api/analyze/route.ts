@@ -2,15 +2,17 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import {
   refreshAccessToken,
-  getUploadsPlaylistId,
+  getChannelInfo,
   getAllVideoIds,
   getVideoDetails,
   getChannelAnalytics,
-  getTopComments,
+  fetchCommentsParallel,
 } from "@/lib/youtube";
-import { processChannelData } from "@/lib/process";
+import { scoreVideos, buildSummary } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
-import type { YouTubeChannel } from "@/types";
+import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
+import { saveSnapshot } from "@/lib/snapshot";
+import type { YouTubeChannel, NicheSummary } from "@/types";
 
 export const maxDuration = 300;
 
@@ -26,95 +28,113 @@ export async function GET(request: NextRequest) {
 
       try {
         const userId = request.cookies.get("user_id")?.value;
-        if (!userId) {
-          emit({ event: "error", message: "Not authenticated" });
-          return;
-        }
+        if (!userId) { emit({ event: "error", message: "Not authenticated" }); return; }
 
         const supabase = createAdminClient();
 
-        const { data: conn } = await supabase
-          .from("youtube_connections")
-          .select("*")
-          .eq("user_id", userId)
-          .single();
+        const [{ data: conn }, { data: userData }] = await Promise.all([
+          supabase.from("youtube_connections").select("*").eq("user_id", userId).single(),
+          supabase.from("users").select("niche").eq("id", userId).single(),
+        ]);
 
-        if (!conn) {
-          emit({ event: "error", message: "No YouTube connection found" });
-          return;
-        }
+        if (!conn) { emit({ event: "error", message: "No YouTube connection found" }); return; }
+        const niche: string | null = userData?.niche ?? null;
 
         let accessToken: string = conn.access_token;
-        if (new Date(conn.token_expires_at) <= new Date()) {
-          const refreshed = await refreshAccessToken(conn.refresh_token);
-          accessToken = refreshed.accessToken;
-          await supabase
-            .from("youtube_connections")
-            .update({
-              access_token: accessToken,
-              token_expires_at: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString(),
-            })
-            .eq("id", conn.id);
-        }
+        let tokenExpiresAt: Date = new Date(conn.token_expires_at);
 
+        const maybeRefresh = async () => {
+          if (tokenExpiresAt <= new Date()) {
+            try {
+              const refreshed = await refreshAccessToken(conn.refresh_token);
+              accessToken = refreshed.accessToken;
+              tokenExpiresAt = new Date(Date.now() + refreshed.expiresIn * 1000);
+              await supabase.from("youtube_connections").update({
+                access_token: accessToken,
+                token_expires_at: tokenExpiresAt.toISOString(),
+              }).eq("id", conn.id);
+            } catch {
+              emit({ event: "error", message: "needs_reauth" });
+              throw new Error("needs_reauth");
+            }
+          }
+        };
+
+        await maybeRefresh();
         emit({ event: "step_done", step: "connect" });
 
-        // Pull all video IDs
+        // ── Pull all video IDs (full pagination) ──────────────────────────
         emit({ event: "step_start", step: "pull" });
-        const uploadsPlaylistId = await getUploadsPlaylistId(accessToken);
-        const videoIds = await getAllVideoIds(uploadsPlaylistId, accessToken, (count) => {
+        const channelStats = await getChannelInfo(accessToken);
+        const videoIds = await getAllVideoIds(channelStats.uploadsPlaylistId, accessToken, (count) => {
           emit({ event: "videos_found", count });
         });
 
+        await maybeRefresh();
         const rawVideos = await getVideoDetails(videoIds, accessToken, (current, total) => {
           emit({ event: "details_progress", current, total });
         });
         emit({ event: "step_done", step: "pull" });
 
-        // Pull analytics
+        // ── Analytics (paginated, 500 rows per page) ──────────────────────
         emit({ event: "step_start", step: "analytics" });
-        const analyticsMap = await getChannelAnalytics(accessToken);
+        await maybeRefresh();
+        const analyticsMap = await getChannelAnalytics(accessToken, (page, total) => {
+          emit({ event: "analytics_progress", page, total });
+        });
         emit({ event: "step_done", step: "analytics" });
 
-        // Process: score + rank
+        // ── Niche intelligence (if niche set) ────────────────────────────
+        let nicheSummary: NicheSummary | null = null;
+        if (niche) {
+          emit({ event: "step_start", step: "niche" });
+          await maybeRefresh();
+          const nicheIds = await searchNicheVideoIds(niche, accessToken);
+          const nicheVideos = await getNicheVideoDetails(nicheIds, accessToken);
+          nicheSummary = processNicheData(nicheVideos, niche);
+          emit({ event: "step_done", step: "niche" });
+        } else {
+          emit({ event: "step_skip", step: "niche" });
+        }
+
+        // ── Score + rank all videos (single pass) ─────────────────────────
         emit({ event: "step_start", step: "process" });
         const channelInfo: YouTubeChannel = {
           id: conn.channel_id,
           title: conn.channel_title,
           handle: conn.channel_handle ?? "",
           thumbnail: conn.channel_thumbnail ?? "",
-          subscriberCount: conn.subscriber_count,
-          totalViews: 0,
+          subscriberCount: channelStats.subscriberCount,
+          totalViews: channelStats.totalViews,
           videoCount: videoIds.length,
         };
 
-        const preliminary = processChannelData(rawVideos, analyticsMap, new Map(), channelInfo);
+        const scored = scoreVideos(rawVideos, analyticsMap);
         emit({ event: "step_done", step: "process" });
 
-        // Fetch comments for top + bottom performers
+        // ── Fetch comments for top 10 + bottom 10 only (parallel, batched) ─
         emit({ event: "step_start", step: "rank" });
-        const commentTargets = [
-          ...preliminary.topPerformers,
-          ...preliminary.bottomPerformers,
+        const commentTargetIds = [
+          ...scored.scored.slice(0, 10),
+          ...scored.scored.slice(-10).reverse(),
         ].map((v) => v.id);
 
-        const commentsMap = new Map<string, string[]>();
-        for (const videoId of commentTargets) {
-          if (request.signal.aborted) return;
-          const comments = await getTopComments(videoId, accessToken);
-          commentsMap.set(videoId, comments);
-        }
+        await maybeRefresh();
+        const commentsMap = await fetchCommentsParallel(commentTargetIds, accessToken, (done, total) => {
+          emit({ event: "comments_progress", done, total });
+        });
         emit({ event: "step_done", step: "rank" });
 
-        // Build final summary with comments
+        // ── Build summary + store raw + call Claude ───────────────────────
         emit({ event: "step_start", step: "save" });
-        const summary = processChannelData(rawVideos, analyticsMap, commentsMap, channelInfo);
+        const summary = buildSummary(scored, commentsMap, channelInfo);
 
         const { data: analysis, error: saveError } = await supabase
           .from("analyses")
           .insert({
             user_id: userId,
             channel_id: conn.channel_id,
+            raw_videos: rawVideos,
             summary,
             total_videos: videoIds.length,
           })
@@ -126,12 +146,11 @@ export async function GET(request: NextRequest) {
           return;
         }
 
-        const { brief, autopsy } = await generateContentBrief(summary);
-
-        await supabase
-          .from("analyses")
-          .update({ brief, autopsy })
-          .eq("id", analysis.id);
+        const [{ brief, autopsy }] = await Promise.all([
+          generateContentBrief(summary, nicheSummary),
+          saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos }),
+        ]);
+        await supabase.from("analyses").update({ brief, autopsy }).eq("id", analysis.id);
 
         emit({ event: "step_done", step: "save" });
         emit({ event: "complete", analysisId: analysis.id });

@@ -26,11 +26,19 @@ export async function refreshAccessToken(refreshToken: string) {
   return { accessToken: data.access_token as string, expiresIn: data.expires_in as number };
 }
 
-export async function getUploadsPlaylistId(accessToken: string): Promise<string> {
-  const data = await ytFetch(`${YT}/channels?part=contentDetails&mine=true`, accessToken);
-  const id = data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
-  if (!id) throw new Error("Could not find uploads playlist");
-  return id;
+export async function getChannelInfo(accessToken: string): Promise<{
+  uploadsPlaylistId: string;
+  subscriberCount: number;
+  totalViews: number;
+}> {
+  const data = await ytFetch(`${YT}/channels?part=contentDetails,statistics&mine=true`, accessToken);
+  const item = data.items?.[0];
+  if (!item) throw new Error("Could not find channel");
+  return {
+    uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads ?? "",
+    subscriberCount: parseInt(item.statistics?.subscriberCount ?? "0"),
+    totalViews: parseInt(item.statistics?.viewCount ?? "0"),
+  };
 }
 
 export async function getAllVideoIds(
@@ -45,7 +53,10 @@ export async function getAllVideoIds(
     const params = new URLSearchParams({ playlistId, part: "contentDetails", maxResults: "50" });
     if (pageToken) params.set("pageToken", pageToken);
     const data = await ytFetch(`${YT}/playlistItems?${params}`, accessToken);
-    ids.push(...(data.items ?? []).map((i: { contentDetails: { videoId: string } }) => i.contentDetails.videoId));
+    for (const item of data.items ?? []) {
+      const id = item.contentDetails?.videoId;
+      if (id) ids.push(id);
+    }
     pageToken = data.nextPageToken;
     onProgress(ids.length);
   } while (pageToken);
@@ -71,10 +82,14 @@ export async function getVideoDetails(
   return videos;
 }
 
-export async function getChannelAnalytics(accessToken: string): Promise<Map<string, VideoAnalytics>> {
+export async function getChannelAnalytics(
+  accessToken: string,
+  onProgress?: (page: number, total: number) => void
+): Promise<Map<string, VideoAnalytics>> {
   const map = new Map<string, VideoAnalytics>();
   const metrics = "averageViewDuration,averageViewPercentage,impressions,impressionClickThroughRate";
   let startIndex = 1;
+  let page = 0;
 
   while (true) {
     const params = new URLSearchParams({
@@ -93,14 +108,12 @@ export async function getChannelAnalytics(accessToken: string): Promise<Map<stri
     const data = await res.json();
     if (!res.ok || !data.rows?.length) break;
 
+    page++;
     for (const [videoId, avgDuration, avgPct, impressions, ctr] of data.rows) {
-      map.set(videoId, {
-        averageViewDuration: avgDuration,
-        averageViewPercentage: avgPct,
-        impressions,
-        ctr,
-      });
+      map.set(videoId, { averageViewDuration: avgDuration, averageViewPercentage: avgPct, impressions, ctr });
     }
+
+    onProgress?.(page, map.size);
 
     if (data.rows.length < 500) break;
     startIndex += 500;
@@ -109,7 +122,25 @@ export async function getChannelAnalytics(accessToken: string): Promise<Map<stri
   return map;
 }
 
-export async function getTopComments(videoId: string, accessToken: string): Promise<string[]> {
+export async function fetchCommentsParallel(
+  videoIds: string[],
+  accessToken: string,
+  onProgress?: (done: number, total: number) => void
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  const BATCH = 5;
+
+  for (let i = 0; i < videoIds.length; i += BATCH) {
+    const batch = videoIds.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map((id) => getTopComments(id, accessToken)));
+    batch.forEach((id, j) => map.set(id, results[j]));
+    onProgress?.(Math.min(i + BATCH, videoIds.length), videoIds.length);
+  }
+
+  return map;
+}
+
+async function getTopComments(videoId: string, accessToken: string): Promise<string[]> {
   try {
     const params = new URLSearchParams({ videoId, part: "snippet", maxResults: "20", order: "relevance" });
     const res = await fetch(`${YT}/commentThreads?${params}`, {

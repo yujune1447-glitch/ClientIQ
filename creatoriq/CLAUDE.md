@@ -12,3 +12,8 @@
 - Make all decisions autonomously and proceed
 - If something can go wrong just fix it yourself
 - Terminal output: one line maximum per action, no paragraphs, no explanations, just do it and say done
+- Never ask yes/no questions, never ask for confirmation, never ask permission, make all decisions yourself and proceed
+- Never modify or remove any rules from this file
+- Full autonomy granted — never pause, never ask to proceed, never ask any question at all
+- If uncertain, make a decision and continue
+- Treat every message as full permission to complete the entire task
