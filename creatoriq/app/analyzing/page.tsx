@@ -10,7 +10,6 @@ const STEPS = [
   { id: "connect", label: "Connected to YouTube", sublabel: "OAuth verified" },
   { id: "pull", label: "Pulling channel history", sublabel: "Fetching all videos and metadata" },
   { id: "analytics", label: "Fetching analytics data", sublabel: "Views, CTR, retention per video" },
-  { id: "niche", label: "Researching your niche", sublabel: "Analysing top public videos in your space" },
   { id: "instagram", label: "Pulling Instagram data", sublabel: "Fetching posts, engagement, reach and insights" },
   { id: "tiktok", label: "Pulling TikTok data", sublabel: "Fetching videos, views, engagement and comments" },
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
@@ -61,7 +60,7 @@ export default function AnalyzingPage() {
           source.close();
           const analysisId = msg.analysisId as string;
           if (analysisId) {
-            router.push(`/dashboard?id=${analysisId}`);
+            router.push(`/analysis/${analysisId}`);
           }
           break;
         }

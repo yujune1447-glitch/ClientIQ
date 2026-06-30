@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get("error");
 
   if (!code || error) {
-    return NextResponse.redirect(`${APP_URL}/niche?tiktok_error=oauth_denied`);
+    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=oauth_denied`);
   }
 
   const userId = request.cookies.get("user_id")?.value;
@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
   });
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/niche?tiktok_error=token_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`);
   }
 
   const tokenData = await tokenRes.json();
   if (tokenData.error && tokenData.error !== "ok") {
-    return NextResponse.redirect(`${APP_URL}/niche?tiktok_error=token_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`);
   }
 
   const { access_token, refresh_token, expires_in, refresh_expires_in, open_id } = tokenData;
@@ -47,14 +47,14 @@ export async function GET(request: NextRequest) {
   );
 
   if (!userRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/niche?tiktok_error=user_info_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`);
   }
 
   const userData = await userRes.json();
   const user = userData.data?.user;
 
   if (!user) {
-    return NextResponse.redirect(`${APP_URL}/niche?tiktok_error=user_info_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`);
   }
 
   const supabase = createAdminClient();
@@ -81,5 +81,5 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id" }
   );
 
-  return NextResponse.redirect(`${APP_URL}/niche?tiktok_connected=1`);
+  return NextResponse.redirect(`${APP_URL}/workspace`);
 }

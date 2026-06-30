@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
 
   if (!code || searchParams.get("error")) {
-    return NextResponse.redirect(`${APP_URL}/niche?instagram_error=oauth_denied`);
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=oauth_denied`);
   }
 
   const userId = request.cookies.get("user_id")?.value;
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   });
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/niche?instagram_error=token_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=token_failed`);
   }
 
   const { access_token: shortLivedToken } = await tokenRes.json();
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   );
 
   if (!longLivedRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/niche?instagram_error=token_failed`);
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=token_failed`);
   }
 
   const { access_token: userToken, expires_in } = await longLivedRes.json();
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   const pages: { id: string; name: string; access_token: string }[] = pagesData.data ?? [];
 
   if (!pages.length) {
-    return NextResponse.redirect(`${APP_URL}/niche?instagram_error=no_facebook_page`);
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=no_facebook_page`);
   }
 
   let igUserId: string | null = null;
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!igUserId || !pageToken) {
-    return NextResponse.redirect(`${APP_URL}/niche?instagram_error=no_instagram_business`);
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=no_instagram_business`);
   }
 
   const igUser = await fbFetch(
@@ -102,5 +102,5 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id" }
   );
 
-  return NextResponse.redirect(`${APP_URL}/niche?instagram_connected=1`);
+  return NextResponse.redirect(`${APP_URL}/workspace`);
 }

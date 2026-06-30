@@ -1,26 +1,12 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { PlayCircle, BarChart3, Zap, ArrowRight, CheckCircle, Bell } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase-admin";
+import Link from "next/link";
+import { PlayCircle, BarChart3, Zap, ArrowRight, CheckCircle } from "lucide-react";
 
 export default async function LandingPage() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
-  const isLoggedIn = !!userId;
-
-  let unreadAnalysis: { id: string } | null = null;
-  if (userId) {
-    const supabase = createAdminClient();
-    const { data } = await supabase
-      .from("analyses")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("is_unread", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    unreadAnalysis = data;
-  }
+  if (userId) redirect("/workspace");
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col">
       {/* Nav */}
@@ -62,38 +48,16 @@ export default async function LandingPage() {
           with your audience, and generates your weekly content brief — powered by AI.
         </p>
 
-        {unreadAnalysis && (
-          <Link
-            href={`/dashboard?id=${unreadAnalysis.id}`}
-            className="flex items-center gap-2 bg-[#1a1014] border border-[#ff3040]/40 rounded-lg px-4 py-2.5 mb-6 text-sm text-zinc-200 hover:border-[#ff3040]/70 transition-colors"
-          >
-            <Bell className="w-4 h-4 text-[#ff3040] shrink-0" />
-            Your weekly brief is ready — view it now
-            <ArrowRight className="w-3.5 h-3.5 ml-auto text-zinc-500" />
-          </Link>
-        )}
-
         <div className="flex flex-col sm:flex-row items-center gap-3">
-          {isLoggedIn ? (
-            <Link
-              href="/niche"
-              className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-            >
-              <PlayCircle className="w-4 h-4" />
-              Run new analysis
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          ) : (
-            <a
-              href="/api/auth/youtube"
-              className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-            >
-              <PlayCircle className="w-4 h-4" />
-              Connect your YouTube channel
-              <ArrowRight className="w-4 h-4" />
-            </a>
-          )}
-          {!isLoggedIn && <span className="text-xs text-zinc-600">Free to try · No credit card required</span>}
+          <a
+            href="/api/auth/youtube"
+            className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
+          >
+            <PlayCircle className="w-4 h-4" />
+            Connect your YouTube channel
+            <ArrowRight className="w-4 h-4" />
+          </a>
+          <span className="text-xs text-zinc-600">Free to try · No credit card required</span>
         </div>
       </section>
 
@@ -173,23 +137,13 @@ export default async function LandingPage() {
           <p className="text-zinc-500 text-sm mb-8">
             Connect your channel in 30 seconds and get your first content brief today.
           </p>
-          {isLoggedIn ? (
-            <Link
-              href="/niche"
-              className="inline-flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-            >
-              <PlayCircle className="w-4 h-4" />
-              Run new analysis
-            </Link>
-          ) : (
-            <a
-              href="/api/auth/youtube"
-              className="inline-flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-            >
-              <PlayCircle className="w-4 h-4" />
-              Connect YouTube — it&apos;s free
-            </a>
-          )}
+          <a
+            href="/api/auth/youtube"
+            className="inline-flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
+          >
+            <PlayCircle className="w-4 h-4" />
+            Connect YouTube — it&apos;s free
+          </a>
         </div>
       </section>
 
