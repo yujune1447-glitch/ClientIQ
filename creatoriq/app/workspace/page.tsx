@@ -14,13 +14,15 @@ export default async function WorkspacePage({
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
 
+  console.log("[workspace] Page load. user_id=%s analysis_param=%s", userId ?? "MISSING", analysisId ?? "none");
+
   if (!userId) redirect("/");
 
   const supabase = createAdminClient();
 
   const [
-    { data: allAnalyses },
-    { data: ytConn },
+    { data: allAnalyses, error: analysesErr },
+    { data: ytConn, error: ytErr },
     { data: igConn },
     { data: ttConn },
     { data: snapshots },
@@ -36,17 +38,22 @@ export default async function WorkspacePage({
     supabase.from("channel_snapshots").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
   ]);
 
+  console.log("[workspace] DB results: ytConn_found=%s ytConn_err=%s analyses_count=%d analyses_err=%s",
+    !!ytConn, ytErr?.message ?? "none", allAnalyses?.length ?? 0, analysesErr?.message ?? "none");
+
   const targetId = analysisId ?? allAnalyses?.[0]?.id ?? null;
+  console.log("[workspace] targetId=%s (from param=%s, from latest=%s)", targetId ?? "null", analysisId ?? "none", allAnalyses?.[0]?.id ?? "none");
 
   let selectedAnalysis = null;
   if (targetId) {
-    const { data } = await supabase
+    const { data, error: selErr } = await supabase
       .from("analyses")
       .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at")
       .eq("id", targetId)
       .eq("user_id", userId)
       .single();
     selectedAnalysis = data;
+    console.log("[workspace] selectedAnalysis fetch: id=%s found=%s err=%s", targetId, !!data, selErr?.message ?? "none");
   }
 
   const sidebarAnalyses = (allAnalyses ?? []).map((a) => ({

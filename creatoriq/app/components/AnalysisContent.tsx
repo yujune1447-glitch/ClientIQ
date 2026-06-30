@@ -1,17 +1,16 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
-  MessageSquare, Lightbulb, Target, BarChart2, Bell, Camera, Heart, Music2, Share2,
-  Clock, Database,
+  MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
+  Sparkles, Loader2, X, Send,
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
-import { GrowthSection } from "@/app/components/GrowthSection";
-import { CommentIntelligenceSection } from "@/app/components/CommentIntelligenceSection";
 import type {
-  ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore,
+  ChannelSummary, ContentAutopsy, VideoWithScore,
   ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence,
-  BriefHook, BriefThumbnail,
+  ContentBrief,
 } from "@/types";
 
 export interface AnalysisData {
@@ -27,10 +26,50 @@ export interface AnalysisData {
   isScheduled: boolean;
 }
 
+type Period = "weekly" | "monthly" | "alltime";
+type ModalMsg = { role: "user" | "assistant"; content: string; hidden?: boolean };
+
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "alltime", label: "All Time" },
+];
+
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
+}
+
+function relDate(dateStr: string): string {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff < 7) return `${diff}d ago`;
+  if (diff < 30) return `${Math.floor(diff / 7)}w ago`;
+  if (diff < 365) return `${Math.floor(diff / 30)}mo ago`;
+  return `${Math.floor(diff / 365)}y ago`;
+}
+
+function filterByPeriod(videos: VideoWithScore[], period: Period, analysisDate: string): VideoWithScore[] {
+  if (period === "alltime") return videos;
+  const cutoff = new Date(analysisDate);
+  cutoff.setDate(cutoff.getDate() - (period === "weekly" ? 7 : 30));
+  return videos.filter((v) => new Date(v.publishedAt) >= cutoff);
+}
+
+function computeSubDelta(snapshots: ChannelSnapshot[], period: Period, analysisDate: string): number | null {
+  if (snapshots.length < 2) return null;
+  const sorted = [...snapshots].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const latest = sorted[sorted.length - 1];
+  if (period === "alltime") return latest.subscriber_count - sorted[0].subscriber_count;
+  const cutoff = new Date(analysisDate);
+  cutoff.setDate(cutoff.getDate() - (period === "weekly" ? 7 : 30));
+  const older = sorted.filter((s) => new Date(s.created_at) <= cutoff);
+  if (!older.length) return null;
+  return latest.subscriber_count - older[older.length - 1].subscriber_count;
 }
 
 export function AnalysisContent({
@@ -42,12 +81,10 @@ export function AnalysisContent({
   snapshots: ChannelSnapshot[];
   platformFilter?: "youtube" | "instagram" | "tiktok";
 }) {
-  const { summary, brief, autopsy, igSummary, tikTokSummary, commentIntel, isUnread, isScheduled, id, createdAt } = analysis;
+  const { summary, autopsy, igSummary, tikTokSummary, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
 
-  const showIG = !platformFilter || platformFilter === "instagram";
-  const showTT = !platformFilter || platformFilter === "tiktok";
-
+  // ── Instagram view ──────────────────────────────────────────────────────────
   if (platformFilter === "instagram") {
     return (
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
@@ -117,6 +154,7 @@ export function AnalysisContent({
     );
   }
 
+  // ── TikTok view ─────────────────────────────────────────────────────────────
   if (platformFilter === "tiktok") {
     return (
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
@@ -188,6 +226,146 @@ export function AnalysisContent({
     );
   }
 
+  // ── YouTube view ─────────────────────────────────────────────────────────────
+  return <YouTubeView analysis={analysis} snapshots={snapshots} />;
+}
+
+function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshots: ChannelSnapshot[] }) {
+  const { summary, autopsy, isUnread, isScheduled, id, createdAt } = analysis;
+  const { channel, averages, topPerformers, bottomPerformers } = summary;
+
+  const [period, setPeriod] = useState<Period>("monthly");
+  const [ideasOpen, setIdeasOpen] = useState(false);
+  const [modalMsgs, setModalMsgs] = useState<ModalMsg[]>([]);
+  const [modalInput, setModalInput] = useState("");
+  const [modalLoading, setModalLoading] = useState(false);
+  const modalInitRef = useRef(false);
+  const modalEndRef = useRef<HTMLDivElement>(null);
+  const modalInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (ideasOpen) {
+      modalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [modalMsgs, ideasOpen]);
+
+  // Deduplicated video pool from all stored performer lists
+  const allVideos: VideoWithScore[] = (() => {
+    const seen = new Set<string>();
+    const out: VideoWithScore[] = [];
+    for (const v of [...topPerformers, ...bottomPerformers, ...(summary.outliers ?? [])]) {
+      if (!seen.has(v.id)) { seen.add(v.id); out.push(v); }
+    }
+    return out;
+  })();
+
+  const periodVideos = filterByPeriod(allVideos, period, createdAt);
+  const sortedByViews = [...periodVideos].sort((a, b) => b.viewCount - a.viewCount);
+
+  const totalPeriodViews = periodVideos.reduce((s, v) => s + v.viewCount, 0);
+  const totalWatchHours = periodVideos.reduce((s, v) => {
+    return s + ((v.averageViewDuration ?? 0) * v.viewCount) / 3600;
+  }, 0);
+  const subDelta = computeSubDelta(snapshots, period, createdAt);
+
+  // Recent comments from most recently published videos
+  const commentEntries: { author: string; text: string; videoTitle: string; date: string }[] = [];
+  const videosWithComments = [...allVideos]
+    .filter((v) => v.topComments?.length)
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  outer: for (const v of videosWithComments) {
+    for (let i = 0; i < (v.topComments?.length ?? 0); i++) {
+      commentEntries.push({
+        author: v.topCommentAuthors?.[i] ?? "Viewer",
+        text: v.topComments![i],
+        videoTitle: v.title,
+        date: v.publishedAt,
+      });
+      if (commentEntries.length >= 20) break outer;
+    }
+  }
+
+  const openIdeasModal = async () => {
+    setIdeasOpen(true);
+    if (modalInitRef.current) return;
+    modalInitRef.current = true;
+
+    const initPrompt =
+      "Based on my channel data, give me 3 specific, data-backed content ideas I should create this week. For each: a punchy working title, why it fits my channel right now, and the hook strategy for the first 30 seconds. Be direct and specific.";
+
+    setModalMsgs([{ role: "assistant", content: "" }]);
+    setModalLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: initPrompt }],
+          analysisId: id,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        setModalMsgs([{ role: "assistant", content: text }]);
+      }
+      setModalMsgs([
+        { role: "user", content: initPrompt, hidden: true },
+        { role: "assistant", content: text },
+      ]);
+    } catch {
+      setModalMsgs([
+        { role: "assistant", content: "Ready to help you brainstorm content ideas. What would you like to explore?" },
+      ]);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const sendModalMessage = async () => {
+    const text = modalInput.trim();
+    if (!text || modalLoading) return;
+    setModalInput("");
+    const userMsg: ModalMsg = { role: "user", content: text };
+    const updated = [...modalMsgs, userMsg];
+    setModalMsgs([...updated, { role: "assistant", content: "" }]);
+    setModalLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: updated
+            .filter((m) => !m.hidden)
+            .map((m) => ({ role: m.role, content: m.content })),
+          analysisId: id,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let reply = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        reply += decoder.decode(value, { stream: true });
+        setModalMsgs([...updated, { role: "assistant", content: reply }]);
+      }
+    } catch {
+      setModalMsgs([...updated, { role: "assistant", content: "Something went wrong. Try again." }]);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const periodLabel = period === "weekly" ? "last 7 days" : period === "monthly" ? "last 30 days" : "all time";
+
   return (
     <div className="min-h-full">
       {isUnread && <MarkRead analysisId={id} />}
@@ -201,448 +379,384 @@ export function AnalysisContent({
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
+
         {/* Channel header */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 py-1">
           {channel.thumbnail ? (
-            <img src={channel.thumbnail} alt={channel.title} className="w-11 h-11 rounded-full object-cover" />
+            <img src={channel.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover" />
           ) : (
-            <div className="w-11 h-11 rounded-full bg-[#ff3040] flex items-center justify-center shrink-0">
-              <PlayCircle className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-full bg-[#ff3040] flex items-center justify-center shrink-0">
+              <PlayCircle className="w-4 h-4 text-white" />
             </div>
           )}
           <div>
-            <h1 className="text-lg font-bold">{channel.title}</h1>
-            <p className="text-xs text-zinc-500">
-              {fmt(summary.totalVideosAnalysed)} videos analysed · {new Date(createdAt).toLocaleDateString()}
+            <h1 className="text-base font-semibold leading-tight">{channel.title}</h1>
+            <p className="text-[11px] text-zinc-500">
+              Analysed {new Date(createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
             </p>
           </div>
-          <div className="ml-auto flex gap-6">
-            {[
-              { label: "Subscribers", value: fmt(channel.subscriberCount) },
-              { label: "Avg views", value: fmt(averages.views) },
-              { label: "Avg CTR", value: `${averages.ctr}%` },
-            ].map((s) => (
-              <div key={s.label} className="text-right hidden sm:block">
-                <p className="text-base font-bold tabular-nums">{s.value}</p>
-                <p className="text-[11px] text-zinc-600">{s.label}</p>
-              </div>
-            ))}
+          <div className="ml-auto flex items-center gap-5 text-right">
+            <div>
+              <p className="text-sm font-bold tabular-nums">{fmt(channel.subscriberCount)}</p>
+              <p className="text-[10px] text-zinc-600">Subscribers</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold tabular-nums">{averages.ctr}%</p>
+              <p className="text-[10px] text-zinc-600">Avg CTR</p>
+            </div>
           </div>
         </div>
 
-        {/* Content Brief */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Lightbulb className="w-4 h-4 text-[#ff3040]" />
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
-              This Week&apos;s Content Brief
-            </h2>
-          </div>
-          {brief ? (
-            <BriefCard brief={brief} />
-          ) : (
-            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 text-sm text-zinc-500">
-              Brief not available for this analysis.
-            </div>
-          )}
-        </section>
-
-        {/* Channel Autopsy */}
-        {autopsy && (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart2 className="w-4 h-4 text-[#ff3040]" />
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Channel Autopsy</h2>
-            </div>
-
-            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 mb-4">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Overall diagnosis</p>
-              <p className="text-sm text-zinc-200 leading-relaxed">{autopsy.overallTrend}</p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4 mb-4">
-              <div className="bg-[#0f1a14] border border-emerald-900/40 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <TrendingUp className="w-4 h-4 text-emerald-500" />
-                  <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider">What&apos;s working</p>
-                </div>
-                <ul className="space-y-2">
-                  {autopsy.whatIsWorking.map((item, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
-                      <span className="text-emerald-600 shrink-0 mt-0.5">✓</span>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="bg-[#1a0f0f] border border-red-900/40 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <TrendingDown className="w-4 h-4 text-red-500" />
-                  <p className="text-xs font-semibold text-red-500 uppercase tracking-wider">What isn&apos;t working</p>
-                </div>
-                <ul className="space-y-2">
-                  {autopsy.whatIsNotWorking.map((item, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
-                      <span className="text-red-600 shrink-0 mt-0.5">✗</span>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-5">
-                <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Audience insight</p>
-                <p className="text-sm text-zinc-300 leading-relaxed">{autopsy.audienceInsights}</p>
-              </div>
-              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <Target className="w-3.5 h-3.5 text-[#ff3040]" />
-                  <p className="text-xs text-zinc-600 uppercase tracking-wider">Actions to take now</p>
-                </div>
-                <ul className="space-y-2">
-                  {autopsy.actionableAdvice.map((advice, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
-                      <span className="text-[#ff3040] shrink-0 mt-0.5 text-xs font-mono">{i + 1}.</span>
-                      {advice}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Video performance */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart2 className="w-4 h-4 text-[#ff3040]" />
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Video Performance</h2>
-          </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            <VideoList label="Top performers" videos={topPerformers} variant="top" />
-            <VideoList label="Bottom performers" videos={bottomPerformers} variant="bottom" />
-          </div>
-        </section>
-
-        {/* Comment intelligence */}
-        {commentIntel && commentIntel.themes.length > 0 && (
-          <CommentIntelligenceSection intel={commentIntel} />
-        )}
-
-        {/* Growth tracking */}
-        <GrowthSection snapshots={snapshots} />
-
-        {/* Instagram */}
-        {showIG && igSummary ? (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Camera className="w-4 h-4 text-[#ff3040]" />
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Instagram Intelligence</h2>
-              <span className="text-xs text-zinc-600 ml-1">@{igSummary.username}</span>
-            </div>
-            <div className="grid sm:grid-cols-4 gap-3 mb-4">
-              {[
-                { label: "Followers", value: fmt(igSummary.followerCount) },
-                { label: "Avg likes", value: fmt(igSummary.averages.likes) },
-                { label: "Avg reach", value: fmt(igSummary.averages.reach) },
-                { label: "Engagement rate", value: `${igSummary.averages.engagementRate}%` },
-              ].map((s) => (
-                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
-                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
-                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-4">Top posts by engagement</p>
-              <div className="space-y-2">
-                {igSummary.topPosts.slice(0, 5).map((post, i) => (
-                  <a
-                    key={post.id}
-                    href={post.permalink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 hover:bg-[#1a1a1d] rounded-lg px-3 py-2.5 transition-colors group"
-                  >
-                    <span className="text-xs font-mono text-zinc-600 w-5 shrink-0">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors">
-                        {post.caption?.slice(0, 80) || "(no caption)"}
-                      </p>
-                      <p className="text-[11px] text-zinc-600">{post.media_type} · {post.timestamp.slice(0, 10)}</p>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
-                      <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{fmt(post.like_count)}</span>
-                      <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{post.comments_count}</span>
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{fmt(post.reach)}</span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </section>
-        ) : showIG ? (
-          <section>
-            <a
-              href="/api/auth/instagram"
-              className="flex items-center gap-4 bg-[#111113] border border-[#1f1f22] hover:border-[#27272a] rounded-xl p-5 transition-colors group"
+        {/* Period toggle */}
+        <div className="flex items-center gap-1 bg-[#111113] border border-[#1f1f22] rounded-lg p-1 w-fit">
+          {PERIODS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                period === key
+                  ? "bg-[#1c1c1f] text-white shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
             >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center shrink-0">
-                <Camera className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">Connect Instagram</p>
-                <p className="text-xs text-zinc-700">Add cross-platform audience signals to your next brief</p>
-              </div>
-            </a>
-          </section>
-        ) : null}
-
-        {/* TikTok */}
-        {showTT && tikTokSummary ? (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Music2 className="w-4 h-4 text-[#ff3040]" />
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">TikTok Intelligence</h2>
-              <span className="text-xs text-zinc-600 ml-1">{tikTokSummary.displayName}</span>
-            </div>
-            <div className="grid sm:grid-cols-4 gap-3 mb-4">
-              {[
-                { label: "Followers", value: fmt(tikTokSummary.followerCount) },
-                { label: "Avg views", value: fmt(tikTokSummary.averages.views) },
-                { label: "Avg likes", value: fmt(tikTokSummary.averages.likes) },
-                { label: "Engagement rate", value: `${tikTokSummary.averages.engagementRate}%` },
-              ].map((s) => (
-                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
-                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
-                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-4">Top videos by views</p>
-              <div className="space-y-2">
-                {tikTokSummary.topVideos.slice(0, 5).map((video, i) => (
-                  <a
-                    key={video.id}
-                    href={video.share_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 hover:bg-[#1a1a1d] rounded-lg px-3 py-2.5 transition-colors group"
-                  >
-                    <span className="text-xs font-mono text-zinc-600 w-5 shrink-0">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors">
-                        {video.title || video.video_description.slice(0, 80) || "(untitled)"}
-                      </p>
-                      <p className="text-[11px] text-zinc-600">
-                        {video.duration}s · {new Date(video.create_time * 1000).toISOString().slice(0, 10)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{fmt(video.view_count)}</span>
-                      <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{fmt(video.like_count)}</span>
-                      <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{fmt(video.share_count)}</span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </section>
-        ) : showTT ? (
-          <section>
-            <a
-              href="/api/auth/tiktok"
-              className="flex items-center gap-4 bg-[#111113] border border-[#1f1f22] hover:border-[#27272a] rounded-xl p-5 transition-colors group"
-            >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
-                <Music2 className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">Connect TikTok</p>
-                <p className="text-xs text-zinc-700">Add short-form video signals to your next brief</p>
-              </div>
-            </a>
-          </section>
-        ) : null}
-
-        {/* Footer stats */}
-        <div className="border-t border-[#1f1f22] pt-6 flex flex-wrap gap-6 pb-10">
-          {[
-            { icon: <Eye className="w-3.5 h-3.5" />, label: "Avg views", value: fmt(averages.views) },
-            { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Avg likes", value: fmt(averages.likes) },
-            { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Avg comments", value: fmt(averages.comments) },
-            { icon: <BarChart2 className="w-3.5 h-3.5" />, label: "Videos analysed", value: fmt(summary.totalVideosAnalysed) },
-          ].map((s) => (
-            <div key={s.label} className="flex items-center gap-2 text-zinc-500">
-              {s.icon}
-              <span className="text-xs">{s.label}:</span>
-              <span className="text-xs font-semibold text-zinc-300">{s.value}</span>
-            </div>
+              {label}
+            </button>
           ))}
         </div>
+
+        {/* BOX 1 — Channel Overview */}
+        <Card title="Channel Overview">
+          <div className="flex divide-x divide-[#1f1f22]">
+            <StatBlock
+              label="Subscribers"
+              value={fmt(channel.subscriberCount)}
+              delta={subDelta}
+              sub={`change, ${periodLabel}`}
+            />
+            <StatBlock
+              label="Views"
+              value={periodVideos.length > 0 ? fmt(totalPeriodViews) : "—"}
+              sub={`from ${periodVideos.length} video${periodVideos.length !== 1 ? "s" : ""}, ${periodLabel}`}
+            />
+            <StatBlock
+              label="Watch Time"
+              value={totalWatchHours > 0.1 ? `${totalWatchHours < 1000 ? totalWatchHours.toFixed(1) : fmt(Math.round(totalWatchHours))}h` : "—"}
+              sub="estimated hours"
+            />
+            <StatBlock
+              label="Avg Views / Video"
+              value={fmt(averages.views)}
+              sub="across all analysed"
+            />
+          </div>
+        </Card>
+
+        {/* BOX 2 + BOX 3 — Top Content + Recent Comments */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+          {/* BOX 2 — Top Content */}
+          <div className="lg:col-span-3">
+            <Card
+              title="Top Content"
+              subtitle={`By views · ${periodLabel}`}
+            >
+              {sortedByViews.length > 0 ? (
+                <div className="space-y-0.5">
+                  {sortedByViews.slice(0, 10).map((v, i) => (
+                    <a
+                      key={v.id}
+                      href={`https://youtube.com/watch?v=${v.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#161618] transition-colors group"
+                    >
+                      <span className="text-[11px] font-mono text-zinc-600 w-4 shrink-0 text-right">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors leading-tight">
+                          {v.title}
+                        </p>
+                        <p className="text-[10px] text-zinc-600 mt-0.5">{relDate(v.publishedAt)}</p>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
+                        <span className="flex items-center gap-1">
+                          <Eye className="w-3 h-3" />
+                          {fmt(v.viewCount)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <ThumbsUp className="w-3 h-3" />
+                          {fmt(v.likeCount)}
+                        </span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-600 py-6 text-center">
+                  No videos published in this period.
+                </p>
+              )}
+            </Card>
+          </div>
+
+          {/* BOX 3 — Recent Comments */}
+          <div className="lg:col-span-2">
+            <Card title="Recent Comments">
+              {commentEntries.length > 0 ? (
+                <div className="space-y-4 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
+                  {commentEntries.map((c, i) => (
+                    <div key={i} className="flex gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-[#1c1c1f] flex items-center justify-center shrink-0 text-[10px] font-bold text-zinc-400 uppercase">
+                        {c.author.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-1.5 mb-0.5">
+                          <p className="text-[11px] font-semibold text-zinc-300 truncate">{c.author}</p>
+                          <p className="text-[10px] text-zinc-600 shrink-0">{relDate(c.date)}</p>
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">{c.text}</p>
+                        <p className="text-[10px] text-zinc-700 mt-1 truncate">{c.videoTitle}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-600 py-6 text-center">
+                  No comment data available.
+                </p>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        {/* BOX 4 — Video Performance */}
+        <Card title="Video Performance">
+          <div className="grid md:grid-cols-2 gap-6">
+            <VideoList label="Top performers" videos={topPerformers} variant="top" />
+            <VideoList label="Lowest performers" videos={bottomPerformers} variant="bottom" />
+          </div>
+        </Card>
+
+        {/* BOX 5 — Channel Autopsy */}
+        {autopsy && (
+          <Card title="Channel Autopsy">
+            <div className="space-y-4">
+              <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Overall diagnosis</p>
+                <p className="text-sm text-zinc-200 leading-relaxed">{autopsy.overallTrend}</p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="bg-[#0f1a14] border border-emerald-900/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                    <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">What&apos;s working</p>
+                  </div>
+                  <ul className="space-y-2">
+                    {autopsy.whatIsWorking.map((item, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                        <span className="text-emerald-600 shrink-0 mt-0.5">✓</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-[#1a0f0f] border border-red-900/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                    <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wider">What isn&apos;t working</p>
+                  </div>
+                  <ul className="space-y-2">
+                    {autopsy.whatIsNotWorking.map((item, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                        <span className="text-red-600 shrink-0 mt-0.5">✗</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Audience insight</p>
+                  <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.audienceInsights}</p>
+                </div>
+                <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-3 h-3 text-[#ff3040]" />
+                    <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Actions to take now</p>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {autopsy.actionableAdvice.map((advice, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                        <span className="text-[#ff3040] shrink-0 font-mono">{i + 1}.</span>
+                        {advice}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
+
+      {/* Floating Ideas button */}
+      <button
+        onClick={openIdeasModal}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#ff3040] hover:bg-[#e02030] text-white text-sm font-semibold shadow-xl transition-colors"
+      >
+        <Sparkles className="w-4 h-4" />
+        Ideas for You
+      </button>
+
+      {/* Ideas modal */}
+      {ideasOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIdeasOpen(false)}
+          />
+          <div className="relative w-full max-w-xl h-[78vh] bg-[#111113] border border-[#27272a] rounded-2xl flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center gap-2.5 px-5 py-4 border-b border-[#1f1f22] shrink-0">
+              <div className="w-6 h-6 bg-[#ff3040]/10 rounded-lg flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
+              </div>
+              <p className="text-sm font-semibold flex-1">Ideas for You</p>
+              <button
+                onClick={() => setIdeasOpen(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-[#1c1c1f] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {modalMsgs.filter((m) => !m.hidden).length === 0 && modalLoading && (
+                <div className="flex gap-2.5 items-start">
+                  <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles className="w-3 h-3 text-[#ff3040]" />
+                  </div>
+                  <div className="bg-[#1a1a1d] rounded-2xl rounded-tl-sm px-4 py-3">
+                    <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                  </div>
+                </div>
+              )}
+
+              {modalMsgs
+                .filter((m) => !m.hidden)
+                .map((msg, i, arr) => (
+                  <div
+                    key={i}
+                    className={`flex gap-2.5 items-start ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+                  >
+                    {msg.role === "assistant" && (
+                      <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                        <Sparkles className="w-3 h-3 text-[#ff3040]" />
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-[87%] text-[13px] leading-relaxed whitespace-pre-wrap rounded-2xl px-4 py-3 ${
+                        msg.role === "user"
+                          ? "bg-[#ff3040] text-white rounded-tr-sm"
+                          : "bg-[#1a1a1d] text-zinc-200 rounded-tl-sm"
+                      }`}
+                    >
+                      {msg.content ||
+                        (msg.role === "assistant" && modalLoading && i === arr.length - 1 ? (
+                          <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                        ) : null)}
+                    </div>
+                  </div>
+                ))}
+              <div ref={modalEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="shrink-0 border-t border-[#1f1f22] px-4 py-3">
+              <div className="flex items-end gap-2">
+                <div className="flex-1 bg-[#1a1a1d] rounded-xl px-3.5 py-2.5 focus-within:ring-1 focus-within:ring-[#ff3040]/30 transition-all">
+                  <textarea
+                    ref={modalInputRef}
+                    value={modalInput}
+                    onChange={(e) => setModalInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendModalMessage();
+                      }
+                    }}
+                    placeholder="Ask about formats, hooks, titles…"
+                    rows={1}
+                    className="w-full bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[100px]"
+                    style={{ fieldSizing: "content" } as React.CSSProperties}
+                  />
+                </div>
+                <button
+                  onClick={sendModalMessage}
+                  disabled={!modalInput.trim() || modalLoading}
+                  className="w-8 h-8 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-30 disabled:cursor-not-allowed rounded-lg flex items-center justify-center shrink-0 transition-colors"
+                >
+                  {modalLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 text-white" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function BriefCard({ brief }: { brief: ContentBrief }) {
-  const hook = brief.hook;
-  const hookIsObject = hook && typeof hook === "object";
-  const thumbnail = brief.thumbnail ?? brief.thumbnailDirection;
-  const thumbIsObject = thumbnail && typeof thumbnail === "object";
-
+function Card({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 space-y-6">
-      <div>
-        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Make this video</p>
-        <h3 className="text-xl font-bold tracking-tight leading-tight">&ldquo;{brief.weeklyIdea}&rdquo;</h3>
+    <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1f1f22]">
+        <p className="text-sm font-semibold text-white">{title}</p>
+        {subtitle && <p className="text-[11px] text-zinc-600">{subtitle}</p>}
       </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
 
-      <div>
-        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">3 title variations</p>
-        <div className="space-y-2">
-          {brief.titleOptions.map((title, i) => (
-            <div
-              key={i}
-              className={`px-4 py-2.5 rounded-lg border text-sm ${
-                i === 0
-                  ? "border-[#ff3040]/40 bg-[#1a1014] text-white font-medium"
-                  : "border-[#1f1f22] text-zinc-400"
-              }`}
-            >
-              {i === 0 && <span className="text-[10px] text-[#ff3040] font-semibold mr-2 uppercase">Recommended</span>}
-              {title}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="h-px bg-[#1f1f22]" />
-
-      <div>
-        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Opening 30 seconds</p>
-        {hookIsObject ? (
-          <div className="space-y-3">
-            <div className="bg-[#1a1014] border border-[#ff3040]/20 rounded-lg p-4">
-              <p className="text-[10px] text-[#ff3040] uppercase tracking-wider mb-1.5 font-semibold">Opening line</p>
-              <p className="text-sm text-zinc-200 italic leading-relaxed">&ldquo;{(hook as BriefHook).openingLine}&rdquo;</p>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-2">
-              {[
-                { label: "0–10s  Setup", body: (hook as BriefHook).setup, accent: "text-zinc-500" },
-                { label: "10–20s  Tension", body: (hook as BriefHook).tension, accent: "text-amber-600" },
-                { label: "20–30s  Payoff", body: (hook as BriefHook).payoff, accent: "text-emerald-600" },
-              ].map(({ label, body, accent }) => (
-                <div key={label} className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
-                  <p className={`text-[10px] uppercase tracking-wider mb-1.5 font-semibold ${accent}`}>{label}</p>
-                  <p className="text-xs text-zinc-400 leading-relaxed">{body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#1a1014] border border-[#ff3040]/20 rounded-lg p-4">
-            <p className="text-sm text-zinc-200 italic leading-relaxed">{String(hook)}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        {brief.recommendedLength && (
-          <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-3.5 h-3.5 text-zinc-600" />
-              <p className="text-xs text-zinc-600 uppercase tracking-wider">Recommended length</p>
-            </div>
-            <p className="text-sm text-zinc-300 leading-relaxed">{brief.recommendedLength}</p>
-          </div>
-        )}
-        <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
-          <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Format &amp; production</p>
-          <p className="text-sm text-zinc-300 leading-relaxed">{brief.format}</p>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Key talking points</p>
-        <ul className="space-y-2">
-          {brief.keyTalkingPoints.map((point, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-sm text-zinc-300">
-              <span className="text-[#ff3040] font-mono text-xs mt-0.5 shrink-0">{i + 1}.</span>
-              {point}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div>
-        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Thumbnail direction</p>
-        {thumbIsObject ? (
-          <div className="space-y-2">
-            <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4 mb-3">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-1.5">Concept</p>
-              <p className="text-sm text-zinc-300 leading-relaxed">{(thumbnail as BriefThumbnail).concept}</p>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-2">
-              {[
-                { label: "Colours", body: (thumbnail as BriefThumbnail).colours },
-                { label: "Composition", body: (thumbnail as BriefThumbnail).composition },
-                { label: "Text overlay", body: (thumbnail as BriefThumbnail).textOverlay },
-              ].map(({ label, body }) => (
-                <div key={label} className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">{label}</p>
-                  <p className="text-xs text-zinc-400 leading-relaxed">{body}</p>
-                </div>
-              ))}
-            </div>
-            {(thumbnail as BriefThumbnail).faceExpression && (
-              <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
-                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Face &amp; expression</p>
-                <p className="text-xs text-zinc-400 leading-relaxed">{(thumbnail as BriefThumbnail).faceExpression}</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
-            <p className="text-sm text-zinc-300 leading-relaxed">{String(thumbnail)}</p>
-          </div>
-        )}
-      </div>
-
-      {brief.dataEvidence && brief.dataEvidence.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Database className="w-3.5 h-3.5 text-zinc-600" />
-            <p className="text-xs text-zinc-600 uppercase tracking-wider">Why this will work — the data</p>
-          </div>
-          <div className="space-y-2">
-            {brief.dataEvidence.map((point, i) => (
-              <div key={i} className="flex gap-3 bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
-                <div className="shrink-0 mt-0.5">
-                  <div className="w-5 h-5 rounded-full bg-[#1f1f22] flex items-center justify-center">
-                    <span className="text-[9px] font-bold text-zinc-500">{i + 1}</span>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-zinc-300 mb-1">{point.claim}</p>
-                  <p className="text-xs text-zinc-600 leading-relaxed">{point.evidence}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {brief.rationale && (!brief.dataEvidence || brief.dataEvidence.length === 0) && (
-        <div>
-          <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Why this works</p>
-          <p className="text-sm text-zinc-300 leading-relaxed">{brief.rationale}</p>
-        </div>
-      )}
+function StatBlock({
+  label,
+  value,
+  delta,
+  sub,
+}: {
+  label: string;
+  value: string;
+  delta?: number | null;
+  sub?: string;
+}) {
+  return (
+    <div className="flex-1 px-5 py-4 min-w-0">
+      <p className="text-[11px] text-zinc-500 mb-2 truncate">{label}</p>
+      <p className="text-2xl font-bold tabular-nums text-white leading-none">{value}</p>
+      {delta != null ? (
+        <p className={`text-[11px] mt-1.5 font-medium ${delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+          {delta >= 0 ? "+" : ""}{fmt(Math.abs(delta))} {sub}
+        </p>
+      ) : sub ? (
+        <p className="text-[10px] text-zinc-600 mt-1.5 leading-tight">{sub}</p>
+      ) : null}
     </div>
   );
 }
@@ -667,20 +781,23 @@ function VideoList({
         )}
         <p className={`text-xs font-semibold ${isTop ? "text-emerald-500" : "text-red-500"}`}>{label}</p>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {videos.map((v, i) => (
-          <div key={v.id} className="flex items-center gap-3 bg-[#111113] border border-[#1f1f22] rounded-lg px-4 py-3">
-            <span className="text-xs font-mono text-zinc-600 w-5 shrink-0">#{i + 1}</span>
+          <div
+            key={v.id}
+            className="flex items-center gap-3 bg-[#0d0d0f] rounded-lg px-3.5 py-3"
+          >
+            <span className="text-[11px] font-mono text-zinc-600 w-4 shrink-0">{i + 1}</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{v.title}</p>
-              <p className="text-xs text-zinc-600">{v.publishedAt.slice(0, 10)}</p>
+              <p className="text-sm font-medium truncate leading-tight">{v.title}</p>
+              <p className="text-[10px] text-zinc-600 mt-0.5">{v.publishedAt.slice(0, 10)}</p>
             </div>
             <div className="text-right shrink-0">
               <div className="flex items-center gap-1 text-sm font-bold text-white">
                 <Eye className="w-3 h-3 text-zinc-600" />
                 {fmt(v.viewCount)}
               </div>
-              <p className={`text-[11px] ${isTop ? "text-emerald-500" : "text-red-500"}`}>
+              <p className={`text-[10px] mt-0.5 ${isTop ? "text-emerald-500" : "text-red-500"}`}>
                 Score {v.performanceScore}
               </p>
             </div>

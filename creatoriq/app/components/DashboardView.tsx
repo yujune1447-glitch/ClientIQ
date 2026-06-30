@@ -1,7 +1,9 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Users, Eye, BarChart2, Lightbulb, PlayCircle, Camera, Music2 } from "lucide-react";
-import { GrowthSection } from "@/app/components/GrowthSection";
+import {
+  Users, Eye, ThumbsUp, MessageSquare, TrendingUp, TrendingDown,
+  PlayCircle, Camera, Music2, Heart, Minus,
+} from "lucide-react";
 import type { AnalysisData } from "@/app/components/AnalysisContent";
 import type { ChannelSnapshot } from "@/types";
 
@@ -11,44 +13,69 @@ function fmt(n: number) {
   return n.toLocaleString();
 }
 
+function weeklyGrowth(snapshots: ChannelSnapshot[]): number | null {
+  if (snapshots.length < 2) return null;
+  const sorted = [...snapshots].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const prev = sorted[sorted.length - 2].subscriber_count;
+  const latest = sorted[sorted.length - 1].subscriber_count;
+  if (prev <= 0) return null;
+  return ((latest - prev) / prev) * 100;
+}
+
+function GrowthPill({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="text-[11px] text-zinc-600">—</span>;
+  const pos = pct >= 0;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${pos ? "text-emerald-400" : "text-red-400"}`}>
+      {pos ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+      {pos ? "+" : ""}{pct.toFixed(1)}%
+    </span>
+  );
+}
+
+interface ContentItem {
+  platform: "youtube" | "instagram" | "tiktok";
+  title: string;
+  views: number;
+  likes: number;
+  comments: number;
+  url?: string;
+}
+
+const PLATFORM_ICON: Record<ContentItem["platform"], React.ReactNode> = {
+  youtube: <PlayCircle className="w-3 h-3 text-[#ff3040]" />,
+  instagram: <Camera className="w-3 h-3 text-pink-400" />,
+  tiktok: <Music2 className="w-3 h-3 text-cyan-400" />,
+};
+
+const PLATFORM_LABEL: Record<ContentItem["platform"], string> = {
+  youtube: "YouTube",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+};
+
 interface Props {
   analysis: AnalysisData | null;
   snapshots: ChannelSnapshot[];
   ytConn: { channelTitle: string; channelThumbnail: string | null; channelHandle: string | null } | null;
   igConn: { username: string } | null;
   ttConn: { displayName: string } | null;
-  onNavigate: (platform: "youtube" | "instagram" | "tiktok") => void;
 }
 
-function StatCard({ label, value, sub, icon, accent }: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: React.ReactNode;
-  accent?: string;
-}) {
-  return (
-    <div className="bg-[#111113] border border-[#27272a] rounded-xl p-5">
-      <div className="flex items-center gap-2 mb-3 text-zinc-600">
-        {icon}
-        <p className="text-[11px] uppercase tracking-wider font-medium">{label}</p>
-      </div>
-      <p className={`text-2xl font-bold tabular-nums ${accent ?? "text-white"}`}>{value}</p>
-      <p className="text-[11px] text-zinc-600 mt-1">{sub}</p>
-    </div>
-  );
-}
-
-export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn, onNavigate }: Props) {
-  if (!ytConn && !analysis) {
+export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: Props) {
+  if (!ytConn && !igConn && !ttConn) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-sm px-6">
           <div className="w-12 h-12 bg-[#1c1c1f] border border-[#27272a] rounded-xl flex items-center justify-center mx-auto mb-4">
             <PlayCircle className="w-6 h-6 text-zinc-600" />
           </div>
-          <h2 className="text-lg font-semibold mb-2">Connect YouTube to get started</h2>
-          <p className="text-sm text-zinc-500 mb-6">Connect your YouTube channel to see your stats and AI-powered content briefs.</p>
+          <h2 className="text-lg font-semibold mb-2">Connect an account to get started</h2>
+          <p className="text-sm text-zinc-500 mb-6">
+            Connect YouTube, Instagram, or TikTok from the sidebar to see your stats and AI insights.
+          </p>
           <a
             href="/api/auth/youtube"
             className="inline-flex items-center gap-2 bg-[#ff3040] hover:bg-[#e02030] text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"
@@ -61,269 +88,444 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn, onN
     );
   }
 
-  const { summary, brief, igSummary, tikTokSummary } = analysis ?? {
-    summary: null, brief: null, igSummary: null, tikTokSummary: null,
+  const { summary, igSummary, tikTokSummary, commentIntel } = analysis ?? {
+    summary: null,
+    igSummary: null,
+    tikTokSummary: null,
+    commentIntel: null,
   };
 
+  // ── Totals ────────────────────────────────────────────────────────────
   const ytSubs = summary?.channel.subscriberCount ?? 0;
   const igFollowers = igSummary?.followerCount ?? 0;
   const ttFollowers = tikTokSummary?.followerCount ?? 0;
   const totalFollowers = ytSubs + igFollowers + ttFollowers;
 
-  let weeklyGrowthPct: number | null = null;
-  if (snapshots.length >= 2) {
-    const sorted = [...snapshots].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    const latest = sorted[sorted.length - 1].subscriber_count;
-    const prev = sorted[sorted.length - 2].subscriber_count;
-    if (prev > 0) weeklyGrowthPct = ((latest - prev) / prev) * 100;
+  const ytViews = summary?.channel.totalViews ?? 0;
+  const ttViews = tikTokSummary?.videos.reduce((s, v) => s + v.view_count, 0) ?? 0;
+  const igReach = igSummary?.posts.reduce((s, p) => s + (p.reach ?? 0), 0) ?? 0;
+  const totalViews = ytViews + ttViews + igReach;
+
+  const ytGrowth = weeklyGrowth(snapshots);
+
+  const engRates: number[] = [];
+  if (summary && summary.averages.views > 0)
+    engRates.push((summary.averages.likes / summary.averages.views) * 100);
+  if (igSummary) engRates.push(igSummary.averages.engagementRate);
+  if (tikTokSummary) engRates.push(tikTokSummary.averages.engagementRate);
+  const avgEngagement =
+    engRates.length > 0 ? engRates.reduce((a, b) => a + b, 0) / engRates.length : null;
+
+  // ── Cross-platform content pool ───────────────────────────────────────
+  const contentPool: ContentItem[] = [];
+  if (summary) {
+    for (const v of [...(summary.topPerformers ?? []), ...(summary.bottomPerformers ?? [])]) {
+      contentPool.push({
+        platform: "youtube",
+        title: v.title,
+        views: v.viewCount,
+        likes: v.likeCount,
+        comments: v.commentCount,
+        url: `https://youtube.com/watch?v=${v.id}`,
+      });
+    }
+  }
+  if (igSummary) {
+    for (const p of igSummary.posts ?? []) {
+      contentPool.push({
+        platform: "instagram",
+        title: p.caption?.slice(0, 80) || "(no caption)",
+        views: p.reach ?? 0,
+        likes: p.like_count,
+        comments: p.comments_count,
+        url: p.permalink,
+      });
+    }
+  }
+  if (tikTokSummary) {
+    for (const v of tikTokSummary.videos ?? []) {
+      contentPool.push({
+        platform: "tiktok",
+        title: v.title || v.video_description.slice(0, 80) || "(untitled)",
+        views: v.view_count,
+        likes: v.like_count,
+        comments: v.comment_count,
+        url: v.share_url,
+      });
+    }
   }
 
-  const avgEngagementRate = (() => {
-    const rates: number[] = [];
-    if (summary && summary.averages.views > 0) rates.push((summary.averages.likes / summary.averages.views) * 100);
-    if (igSummary) rates.push(igSummary.averages.engagementRate);
-    if (tikTokSummary) rates.push(tikTokSummary.averages.engagementRate);
-    if (rates.length === 0) return null;
-    return rates.reduce((a, b) => a + b, 0) / rates.length;
-  })();
+  const mostViewed = contentPool.length
+    ? contentPool.reduce((a, b) => (b.views > a.views ? b : a))
+    : null;
+  const mostLiked = contentPool.length
+    ? contentPool.reduce((a, b) => (b.likes > a.likes ? b : a))
+    : null;
+  const mostCommented = contentPool.length
+    ? contentPool.reduce((a, b) => (b.comments > a.comments ? b : a))
+    : null;
 
-  const topVideo = summary?.topPerformers[0];
-  const platforms = [ytConn ? "YouTube" : null, igConn ? "Instagram" : null, ttConn ? "TikTok" : null].filter(Boolean).join(" · ");
+  // ── Top comments ──────────────────────────────────────────────────────
+  const allTopComments: { text: string; videoTitle: string; platform: ContentItem["platform"] }[] = [];
+  if (summary?.topPerformers) {
+    for (const v of summary.topPerformers.slice(0, 5)) {
+      (v.topComments ?? []).slice(0, 2).forEach((text) => {
+        allTopComments.push({ text, videoTitle: v.title, platform: "youtube" });
+      });
+    }
+  }
+  if (igSummary?.topPosts) {
+    for (const p of igSummary.topPosts.slice(0, 3)) {
+      (p.topComments ?? []).slice(0, 1).forEach((text) => {
+        allTopComments.push({ text, videoTitle: p.caption?.slice(0, 60) || "(post)", platform: "instagram" });
+      });
+    }
+  }
+  if (tikTokSummary?.topVideos) {
+    for (const v of tikTokSummary.topVideos.slice(0, 3)) {
+      (v.top_comments ?? []).slice(0, 1).forEach((text) => {
+        allTopComments.push({ text, videoTitle: v.title || v.video_description.slice(0, 60) || "(video)", platform: "tiktok" });
+      });
+    }
+  }
+  const featuredComment = allTopComments[0] ?? null;
+  const secondComment = allTopComments[1] ?? allTopComments[2] ?? null;
+
+  const hasAnyData = analysis !== null;
+  const platforms = [ytConn ? "YouTube" : null, igConn ? "Instagram" : null, ttConn ? "TikTok" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
-      <div>
-        <h1 className="text-xl font-bold">Overview</h1>
-        <p className="text-sm text-zinc-500 mt-0.5">{platforms || "No platforms connected"}</p>
-      </div>
+    <div className="overflow-y-auto h-full">
+      <div className="max-w-4xl mx-auto px-8 py-8 space-y-8 pb-12">
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Followers"
-          value={totalFollowers > 0 ? fmt(totalFollowers) : "—"}
-          sub="across all platforms"
-          icon={<Users className="w-4 h-4" />}
-        />
-        <StatCard
-          label="Weekly Growth"
-          value={weeklyGrowthPct !== null ? `${weeklyGrowthPct > 0 ? "+" : ""}${weeklyGrowthPct.toFixed(1)}%` : "—"}
-          sub="vs last snapshot"
-          icon={weeklyGrowthPct !== null && weeklyGrowthPct >= 0
-            ? <TrendingUp className="w-4 h-4 text-emerald-500" />
-            : <TrendingDown className="w-4 h-4 text-red-500" />}
-          accent={weeklyGrowthPct !== null ? (weeklyGrowthPct >= 0 ? "text-emerald-400" : "text-red-400") : undefined}
-        />
-        <StatCard
-          label="Total Views"
-          value={summary ? fmt(summary.channel.totalViews) : "—"}
-          sub="YouTube lifetime"
-          icon={<Eye className="w-4 h-4" />}
-        />
-        <StatCard
-          label="Avg Engagement"
-          value={avgEngagementRate !== null ? `${avgEngagementRate.toFixed(1)}%` : "—"}
-          sub="across platforms"
-          icon={<BarChart2 className="w-4 h-4" />}
-        />
-      </div>
-
-      <section>
-        <p className="text-[11px] text-zinc-600 uppercase tracking-widest font-medium mb-3">Platforms</p>
-        <div className="grid md:grid-cols-3 gap-3">
-          {ytConn ? (
-            <button
-              onClick={() => onNavigate("youtube")}
-              className="bg-[#111113] border border-[#27272a] hover:border-[#ff3040]/40 rounded-xl p-5 text-left transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-7 h-7 rounded-full bg-[#ff3040]/10 flex items-center justify-center shrink-0">
-                  <PlayCircle className="w-3.5 h-3.5 text-[#ff3040]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold group-hover:text-white transition-colors">YouTube</p>
-                  <p className="text-[11px] text-zinc-600 truncate">{ytConn.channelHandle ?? ytConn.channelTitle}</p>
-                </div>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              </div>
-              {summary ? (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  {[
-                    { v: fmt(ytSubs), l: "Subscribers" },
-                    { v: fmt(summary.averages.views), l: "Avg views" },
-                    { v: `${summary.averages.ctr}%`, l: "Avg CTR" },
-                    { v: fmt(summary.totalVideosAnalysed), l: "Videos" },
-                  ].map(({ v, l }) => (
-                    <div key={l}>
-                      <p className="text-base font-bold tabular-nums">{v}</p>
-                      <p className="text-[11px] text-zinc-600">{l}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-600">No analysis data yet</p>
-              )}
-            </button>
-          ) : (
-            <a
-              href="/api/auth/youtube"
-              className="bg-[#111113] border border-dashed border-[#27272a] hover:border-[#ff3040]/40 rounded-xl p-5 flex flex-col items-center justify-center gap-3 transition-colors group min-h-[140px]"
-            >
-              <div className="w-7 h-7 rounded-full bg-[#ff3040]/10 flex items-center justify-center">
-                <PlayCircle className="w-3.5 h-3.5 text-zinc-600 group-hover:text-[#ff3040] transition-colors" />
-              </div>
-              <p className="text-sm text-zinc-500 group-hover:text-white transition-colors">Connect YouTube</p>
-            </a>
-          )}
-
-          {igConn ? (
-            <button
-              onClick={() => onNavigate("instagram")}
-              className="bg-[#111113] border border-[#27272a] hover:border-pink-500/40 rounded-xl p-5 text-left transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600/20 to-pink-500/20 flex items-center justify-center shrink-0">
-                  <Camera className="w-3.5 h-3.5 text-pink-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold group-hover:text-white transition-colors">Instagram</p>
-                  <p className="text-[11px] text-zinc-600">@{igConn.username}</p>
-                </div>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              </div>
-              {igSummary ? (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  {[
-                    { v: fmt(igSummary.followerCount), l: "Followers" },
-                    { v: `${igSummary.averages.engagementRate}%`, l: "Engagement" },
-                    { v: fmt(igSummary.averages.reach), l: "Avg reach" },
-                    { v: fmt(igSummary.averages.likes), l: "Avg likes" },
-                  ].map(({ v, l }) => (
-                    <div key={l}>
-                      <p className="text-base font-bold tabular-nums">{v}</p>
-                      <p className="text-[11px] text-zinc-600">{l}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-600">Run analysis to see stats</p>
-              )}
-            </button>
-          ) : (
-            <a
-              href="/api/auth/instagram"
-              className="bg-[#111113] border border-dashed border-[#27272a] hover:border-pink-500/40 rounded-xl p-5 flex flex-col items-center justify-center gap-3 transition-colors group min-h-[140px]"
-            >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600/10 to-pink-500/10 flex items-center justify-center">
-                <Camera className="w-3.5 h-3.5 text-zinc-600 group-hover:text-pink-400 transition-colors" />
-              </div>
-              <p className="text-sm text-zinc-500 group-hover:text-white transition-colors">Connect Instagram</p>
-            </a>
-          )}
-
-          {ttConn ? (
-            <button
-              onClick={() => onNavigate("tiktok")}
-              className="bg-[#111113] border border-[#27272a] hover:border-cyan-500/40 rounded-xl p-5 text-left transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500/20 to-[#EE1D52]/20 flex items-center justify-center shrink-0">
-                  <Music2 className="w-3.5 h-3.5 text-cyan-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold group-hover:text-white transition-colors">TikTok</p>
-                  <p className="text-[11px] text-zinc-600">{ttConn.displayName}</p>
-                </div>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              </div>
-              {tikTokSummary ? (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  {[
-                    { v: fmt(tikTokSummary.followerCount), l: "Followers" },
-                    { v: `${tikTokSummary.averages.engagementRate}%`, l: "Engagement" },
-                    { v: fmt(tikTokSummary.averages.views), l: "Avg views" },
-                    { v: fmt(tikTokSummary.videoCount), l: "Videos" },
-                  ].map(({ v, l }) => (
-                    <div key={l}>
-                      <p className="text-base font-bold tabular-nums">{v}</p>
-                      <p className="text-[11px] text-zinc-600">{l}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-600">Run analysis to see stats</p>
-              )}
-            </button>
-          ) : (
-            <a
-              href="/api/auth/tiktok"
-              className="bg-[#111113] border border-dashed border-[#27272a] hover:border-cyan-500/40 rounded-xl p-5 flex flex-col items-center justify-center gap-3 transition-colors group min-h-[140px]"
-            >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500/10 to-[#EE1D52]/10 flex items-center justify-center">
-                <Music2 className="w-3.5 h-3.5 text-zinc-600 group-hover:text-cyan-400 transition-colors" />
-              </div>
-              <p className="text-sm text-zinc-500 group-hover:text-white transition-colors">Connect TikTok</p>
-            </a>
+        {/* Header */}
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Overview</h1>
+            <p className="text-sm text-zinc-500 mt-0.5">{platforms}</p>
+          </div>
+          {analysis && (
+            <p className="text-[11px] text-zinc-600">
+              Last analysed {new Date(analysis.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+            </p>
           )}
         </div>
-      </section>
 
-      {snapshots.length > 0 && <GrowthSection snapshots={snapshots} />}
-
-      {topVideo && (
-        <section>
-          <p className="text-[11px] text-zinc-600 uppercase tracking-widest font-medium mb-3">Trending Content</p>
-          <button
-            onClick={() => onNavigate("youtube")}
-            className="w-full bg-[#111113] border border-[#27272a] hover:border-[#ff3040]/30 rounded-xl p-5 flex items-center gap-4 transition-colors group text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-[#ff3040]/10 flex items-center justify-center shrink-0">
-              <PlayCircle className="w-4 h-4 text-[#ff3040]" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate group-hover:text-white transition-colors">{topVideo.title}</p>
-              <p className="text-[11px] text-zinc-600 mt-0.5">{fmt(topVideo.viewCount)} views · Score {topVideo.performanceScore}</p>
-            </div>
-            <span className="shrink-0 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1">
-              Top performer
-            </span>
-          </button>
-        </section>
-      )}
-
-      {brief && (
-        <section>
-          <p className="text-[11px] text-zinc-600 uppercase tracking-widest font-medium mb-3">Latest Content Brief</p>
-          <div className="bg-[#111113] border border-[#27272a] rounded-xl p-5">
-            <div className="flex items-start gap-3 mb-4">
-              <Lightbulb className="w-4 h-4 text-[#ff3040] shrink-0 mt-0.5" />
-              <p className="text-sm font-bold leading-snug">&ldquo;{brief.weeklyIdea}&rdquo;</p>
-            </div>
-            <div className="space-y-1.5 mb-4">
-              {brief.titleOptions.slice(0, 2).map((t, i) => (
-                <div
-                  key={i}
-                  className={`text-xs px-3 py-2 rounded-lg border ${
-                    i === 0
-                      ? "border-[#ff3040]/30 bg-[#1a1014] text-zinc-300"
-                      : "border-[#1f1f22] text-zinc-500"
-                  }`}
-                >
-                  {i === 0 && <span className="text-[10px] text-[#ff3040] font-semibold mr-2 uppercase">Rec</span>}
-                  {t}
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => onNavigate("youtube")}
-              className="text-xs text-[#ff3040] hover:text-[#e02030] transition-colors"
-            >
-              See full brief →
-            </button>
+        {!hasAnyData && (
+          <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 text-center">
+            <p className="text-sm text-zinc-500">
+              Click an account in the sidebar to load your analytics.
+            </p>
           </div>
-        </section>
-      )}
+        )}
 
-      <div className="pb-4" />
+        {/* ── Combined Totals ──────────────────────────────────────────────── */}
+        {hasAnyData && (
+          <section>
+            <SectionLabel>Combined Totals</SectionLabel>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <BigStatCard
+                label="Total Followers"
+                value={totalFollowers > 0 ? fmt(totalFollowers) : "—"}
+                sub="across all platforms"
+                icon={<Users className="w-4 h-4" />}
+              />
+              <BigStatCard
+                label="Total Views"
+                value={totalViews > 0 ? fmt(totalViews) : "—"}
+                sub="YouTube + TikTok + IG reach"
+                icon={<Eye className="w-4 h-4" />}
+              />
+              <BigStatCard
+                label="Weekly Growth"
+                value={
+                  ytGrowth !== null
+                    ? `${ytGrowth >= 0 ? "+" : ""}${ytGrowth.toFixed(1)}%`
+                    : "—"
+                }
+                sub="YouTube subscribers vs prev snapshot"
+                icon={
+                  ytGrowth !== null && ytGrowth >= 0
+                    ? <TrendingUp className="w-4 h-4 text-emerald-500" />
+                    : ytGrowth !== null
+                    ? <TrendingDown className="w-4 h-4 text-red-500" />
+                    : <Minus className="w-4 h-4 text-zinc-600" />
+                }
+                accent={
+                  ytGrowth !== null
+                    ? ytGrowth >= 0 ? "text-emerald-400" : "text-red-400"
+                    : undefined
+                }
+              />
+              <BigStatCard
+                label="Avg Engagement"
+                value={avgEngagement !== null ? `${avgEngagement.toFixed(1)}%` : "—"}
+                sub="avg across connected platforms"
+                icon={<ThumbsUp className="w-4 h-4" />}
+              />
+            </div>
+          </section>
+        )}
+
+        {/* ── Per-Platform Breakdown ───────────────────────────────────────── */}
+        {hasAnyData && (
+          <section>
+            <SectionLabel>Per-Platform Breakdown</SectionLabel>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {ytConn && (
+                <PlatformCard
+                  icon={<PlayCircle className="w-4 h-4 text-[#ff3040]" />}
+                  name={ytConn.channelTitle}
+                  handle={ytConn.channelHandle ?? undefined}
+                  color="red"
+                  rows={[
+                    { label: "Subscribers", value: summary ? fmt(summary.channel.subscriberCount) : "—" },
+                    { label: "Total views", value: summary ? fmt(summary.channel.totalViews) : "—" },
+                    { label: "Avg CTR", value: summary ? `${summary.averages.ctr}%` : "—" },
+                    {
+                      label: "Weekly growth",
+                      custom: <GrowthPill pct={ytGrowth} />,
+                    },
+                  ]}
+                />
+              )}
+              {igConn && (
+                <PlatformCard
+                  icon={<Camera className="w-4 h-4 text-pink-400" />}
+                  name={`@${igConn.username}`}
+                  color="pink"
+                  rows={[
+                    { label: "Followers", value: igSummary ? fmt(igSummary.followerCount) : "—" },
+                    { label: "Avg likes", value: igSummary ? fmt(igSummary.averages.likes) : "—" },
+                    { label: "Avg reach", value: igSummary ? fmt(igSummary.averages.reach) : "—" },
+                    { label: "Engagement rate", value: igSummary ? `${igSummary.averages.engagementRate}%` : "—" },
+                  ]}
+                />
+              )}
+              {ttConn && (
+                <PlatformCard
+                  icon={<Music2 className="w-4 h-4 text-cyan-400" />}
+                  name={ttConn.displayName}
+                  color="cyan"
+                  rows={[
+                    { label: "Followers", value: tikTokSummary ? fmt(tikTokSummary.followerCount) : "—" },
+                    { label: "Total likes", value: tikTokSummary ? fmt(tikTokSummary.likesCount) : "—" },
+                    { label: "Avg views", value: tikTokSummary ? fmt(tikTokSummary.averages.views) : "—" },
+                    { label: "Engagement rate", value: tikTokSummary ? `${tikTokSummary.averages.engagementRate}%` : "—" },
+                  ]}
+                />
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── Top Performing Content ───────────────────────────────────────── */}
+        {contentPool.length > 0 && (
+          <section>
+            <SectionLabel>Top Performing Content</SectionLabel>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {mostViewed && (
+                <TopContentCard
+                  badge="Most Viewed"
+                  badgeIcon={<Eye className="w-3 h-3" />}
+                  item={mostViewed}
+                  stat={fmt(mostViewed.views)}
+                  statLabel="views"
+                />
+              )}
+              {mostLiked && (
+                <TopContentCard
+                  badge="Most Liked"
+                  badgeIcon={<Heart className="w-3 h-3" />}
+                  item={mostLiked}
+                  stat={fmt(mostLiked.likes)}
+                  statLabel="likes"
+                />
+              )}
+              {mostCommented && (
+                <TopContentCard
+                  badge="Most Commented"
+                  badgeIcon={<MessageSquare className="w-3 h-3" />}
+                  item={mostCommented}
+                  stat={fmt(mostCommented.comments)}
+                  statLabel="comments"
+                />
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── Top Comments ────────────────────────────────────────────────── */}
+        {(featuredComment || secondComment) && (
+          <section>
+            <SectionLabel>Top Comments</SectionLabel>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {featuredComment && (
+                <CommentCard
+                  label="Most liked comment"
+                  text={featuredComment.text}
+                  source={featuredComment.videoTitle}
+                  platform={featuredComment.platform}
+                />
+              )}
+              {secondComment && (
+                <CommentCard
+                  label="Most replied comment"
+                  text={secondComment.text}
+                  source={secondComment.videoTitle}
+                  platform={secondComment.platform}
+                />
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-medium mb-3">
+      {children}
+    </p>
+  );
+}
+
+function BigStatCard({
+  label,
+  value,
+  sub,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: React.ReactNode;
+  accent?: string;
+}) {
+  return (
+    <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-3 text-zinc-600">
+        {icon}
+        <p className="text-[10px] uppercase tracking-wider font-medium">{label}</p>
+      </div>
+      <p className={`text-2xl font-bold tabular-nums ${accent ?? "text-white"}`}>{value}</p>
+      <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">{sub}</p>
+    </div>
+  );
+}
+
+function PlatformCard({
+  icon,
+  name,
+  handle,
+  color,
+  rows,
+}: {
+  icon: React.ReactNode;
+  name: string;
+  handle?: string;
+  color: "red" | "pink" | "cyan";
+  rows: { label: string; value?: string; custom?: React.ReactNode }[];
+}) {
+  const borderColor = {
+    red: "border-[#ff3040]/20",
+    pink: "border-pink-500/20",
+    cyan: "border-cyan-500/20",
+  }[color];
+
+  return (
+    <div className={`bg-[#111113] border ${borderColor} rounded-xl p-5`}>
+      <div className="flex items-center gap-2 mb-4">
+        {icon}
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate">{name}</p>
+          {handle && <p className="text-[10px] text-zinc-600">{handle}</p>}
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between">
+            <p className="text-[11px] text-zinc-500">{row.label}</p>
+            {row.custom ?? (
+              <p className="text-[12px] font-semibold tabular-nums">{row.value ?? "—"}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopContentCard({
+  badge,
+  badgeIcon,
+  item,
+  stat,
+  statLabel,
+}: {
+  badge: string;
+  badgeIcon: React.ReactNode;
+  item: ContentItem;
+  stat: string;
+  statLabel: string;
+}) {
+  const inner = (
+    <div className="bg-[#111113] border border-[#1f1f22] hover:border-[#27272a] rounded-xl p-5 transition-colors h-full flex flex-col">
+      <div className="flex items-center gap-1.5 mb-3">
+        {badgeIcon}
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{badge}</p>
+        <span className="ml-auto flex items-center gap-1 text-[10px] text-zinc-600">
+          {PLATFORM_ICON[item.platform]}
+          {PLATFORM_LABEL[item.platform]}
+        </span>
+      </div>
+      <p className="text-sm text-zinc-200 leading-snug flex-1 line-clamp-3">{item.title}</p>
+      <div className="mt-4 flex items-baseline gap-1">
+        <p className="text-xl font-bold tabular-nums text-white">{stat}</p>
+        <p className="text-[11px] text-zinc-500">{statLabel}</p>
+      </div>
+    </div>
+  );
+
+  if (item.url) {
+    return (
+      <a href={item.url} target="_blank" rel="noopener noreferrer" className="block h-full">
+        {inner}
+      </a>
+    );
+  }
+  return <div className="h-full">{inner}</div>;
+}
+
+function CommentCard({
+  label,
+  text,
+  source,
+  platform,
+}: {
+  label: string;
+  text: string;
+  source: string;
+  platform: ContentItem["platform"];
+}) {
+  return (
+    <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-5">
+      <div className="flex items-center gap-1.5 mb-3">
+        <MessageSquare className="w-3 h-3 text-zinc-600" />
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{label}</p>
+      </div>
+      <p className="text-sm text-zinc-200 leading-relaxed italic">
+        &ldquo;{text.length > 200 ? text.slice(0, 200) + "…" : text}&rdquo;
+      </p>
+      <div className="flex items-center gap-1.5 mt-3">
+        {PLATFORM_ICON[platform]}
+        <p className="text-[10px] text-zinc-600 truncate">{source}</p>
+      </div>
     </div>
   );
 }

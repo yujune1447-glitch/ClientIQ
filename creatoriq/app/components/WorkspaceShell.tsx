@@ -1,15 +1,32 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
 import {
-  Zap, PlayCircle, Camera, Music2,
-  ChevronDown, ChevronRight, Calendar, AlertCircle, X,
-  Send, Loader2, LayoutDashboard, Plus,
+  Zap, PlayCircle, Camera, Music2, LayoutDashboard,
+  MessageSquare, ChevronDown, ChevronRight, AlertCircle,
+  Send, Loader2, X, Sparkles, Plus,
 } from "lucide-react";
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
 import type { ChannelSnapshot } from "@/types";
+
+type AccountType = "youtube" | "instagram" | "tiktok";
+type MainView = "dashboard" | AccountType;
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  hidden?: boolean;
+}
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  accountType: AccountType;
+  createdAt: string;
+  lastMessage: string;
+  messages: Message[];
+}
 
 interface SidebarAnalysis {
   id: string;
@@ -25,12 +42,10 @@ interface YtConn {
   channelHandle: string | null;
   channelId: string;
 }
-
 interface IgConn {
   username: string;
   profilePictureUrl: string | null;
 }
-
 interface TtConn {
   displayName: string;
   avatarUrl: string | null;
@@ -49,30 +64,27 @@ interface Props {
   tiktokError?: string;
 }
 
-type MainView = "dashboard" | "youtube" | "instagram" | "tiktok" | "analysis";
+const LS_KEY = "creatoriq_conversations_v2";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
+const INIT_PROMPT =
+  "Please give me a concise performance rundown of my channel. Highlight the key changes since my last check-in — wins, concerns, any metric shifts — grounded in actual numbers from my data. Then end with exactly 2 follow-up questions tailored specifically to what you found.";
+
+function loadConversations(): StoredConversation[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
 }
 
-interface ChatTab {
-  id: string;
-  title: string;
-  messages: Message[];
-  loading: boolean;
-  analysisId: string | null;
+function saveConversations(convs: StoredConversation[]) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(convs.slice(0, 50)));
+  } catch {}
 }
-
-const SUGGESTIONS = [
-  "What should I make next?",
-  "Why are my top videos performing?",
-  "How can I improve my CTR?",
-  "What does my audience want more of?",
-];
 
 export default function WorkspaceShell({
-  sidebarAnalyses,
   selectedAnalysisId,
   selectedAnalysis,
   ytConn,
@@ -82,53 +94,73 @@ export default function WorkspaceShell({
   instagramError,
   tiktokError,
 }: Props) {
-  const router = useRouter();
   const [mainView, setMainView] = useState<MainView>("dashboard");
-  const [ytExpanded, setYtExpanded] = useState(true);
-  const [igExpanded, setIgExpanded] = useState(false);
-  const [ttExpanded, setTtExpanded] = useState(false);
-  const [chatTabs, setChatTabs] = useState<ChatTab[]>([]);
-  const [activeChatTabId, setActiveChatTabId] = useState<string | null>(null);
-  const [bottomInput, setBottomInput] = useState("");
-  const bottomInputRef = useRef<HTMLTextAreaElement>(null);
+  const [conversations, setConversations] = useState<StoredConversation[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [convosExpanded, setConvosExpanded] = useState(true);
+  // Client-side fallback — fetched the same way the chat API fetches it.
+  // This is the source of truth when server-side props come back null.
+  const [clientAnalysis, setClientAnalysis] = useState<AnalysisData | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const activeChatTab = chatTabs.find((t) => t.id === activeChatTabId) ?? null;
+  // The analysis used for BOTH center area AND chat API calls.
+  // Prefer server-provided value; fall back to client-fetched.
+  const effectiveAnalysis = selectedAnalysis ?? clientAnalysis;
+  const effectiveAnalysisId = effectiveAnalysis?.id ?? selectedAnalysisId;
 
-  const groupedByDate = sidebarAnalyses.reduce<Record<string, SidebarAnalysis[]>>((acc, a) => {
-    const month = new Date(a.createdAt).toLocaleDateString("en-AU", { month: "short", year: "numeric" });
-    (acc[month] ??= []).push(a);
-    return acc;
-  }, {});
-
-  const navigatePlatform = (platform: "youtube" | "instagram" | "tiktok") => {
-    setMainView(platform);
-    setActiveChatTabId(null);
+  const fetchLatestAnalysis = async () => {
+    try {
+      const res = await fetch("/api/analysis/latest");
+      if (!res.ok) return;
+      const raw = await res.json();
+      if (!raw) return;
+      setClientAnalysis({
+        id: raw.id,
+        createdAt: raw.created_at,
+        summary: raw.summary,
+        brief: raw.brief ?? null,
+        autopsy: raw.autopsy ?? null,
+        igSummary: raw.instagram_summary ?? null,
+        tikTokSummary: raw.tiktok_summary ?? null,
+        commentIntel: raw.comment_intelligence ?? null,
+        isUnread: raw.is_unread === true,
+        isScheduled: raw.generated_by === "scheduled",
+      });
+    } catch {
+      // non-fatal: center will just stay empty if no analysis exists
+    }
   };
 
-  const navigateDashboard = () => {
-    setMainView("dashboard");
-    setActiveChatTabId(null);
-  };
+  useEffect(() => {
+    setConversations(loadConversations());
+    // Always fetch client-side so center area never depends solely on server props
+    fetchLatestAnalysis();
+  }, []);
 
-  const navigateAnalysis = (id: string) => {
-    setMainView("analysis");
-    setActiveChatTabId(null);
-    router.push(`/workspace?analysis=${id}`);
-  };
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const closeTab = (tabId: string) => {
-    setChatTabs((prev) => prev.filter((t) => t.id !== tabId));
-    if (activeChatTabId === tabId) setActiveChatTabId(null);
-  };
+  const streamChat = async (messagesToSend: Message[], convId: string) => {
+    setAiLoading(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
-  const sendToApi = async (tabId: string, messagesToSend: Message[], analysisId: string | null) => {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messagesToSend, analysisId }),
+        body: JSON.stringify({
+          messages: messagesToSend.map((m) => ({ role: m.role, content: m.content })),
+          analysisId: effectiveAnalysisId,
+        }),
       });
-      if (!res.ok || !res.body) throw new Error("bad response");
+      if (!res.ok || !res.body) throw new Error();
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let text = "";
@@ -136,112 +168,199 @@ export default function WorkspaceShell({
         const { done, value } = await reader.read();
         if (done) break;
         text += decoder.decode(value, { stream: true });
-        setChatTabs((prev) =>
-          prev.map((t) =>
-            t.id === tabId
-              ? { ...t, messages: [...t.messages.slice(0, -1), { role: "assistant", content: text }] }
-              : t
-          )
-        );
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          { role: "assistant", content: text },
+        ]);
       }
+
+      const finalMessages: Message[] = [
+        ...messagesToSend,
+        { role: "assistant", content: text },
+      ];
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === convId
+            ? { ...c, messages: finalMessages, lastMessage: text.slice(0, 80) }
+            : c
+        );
+        saveConversations(updated);
+        return updated;
+      });
     } catch {
-      setChatTabs((prev) =>
-        prev.map((t) =>
-          t.id === tabId
-            ? { ...t, messages: [...t.messages.slice(0, -1), { role: "assistant", content: "Something went wrong. Try again." }] }
-            : t
-        )
-      );
+      setMessages((prev) => [
+        ...prev.slice(0, -1),
+        { role: "assistant", content: "Something went wrong. Try again." },
+      ]);
     } finally {
-      setChatTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, loading: false } : t)));
+      setAiLoading(false);
     }
   };
 
-  const handleBottomSubmit = () => {
-    const text = bottomInput.trim();
-    if (!text) return;
-    setBottomInput("");
+  const initConversation = async (convId: string) => {
+    const hiddenInit: Message = { role: "user", content: INIT_PROMPT, hidden: true };
+    setMessages([{ role: "assistant", content: "" }]);
+    setAiLoading(true);
 
-    if (activeChatTab) {
-      if (activeChatTab.loading) return;
-      const userMsg: Message = { role: "user", content: text };
-      const assistantMsg: Message = { role: "assistant", content: "" };
-      const updated = [...activeChatTab.messages, userMsg, assistantMsg];
-      setChatTabs((prev) =>
-        prev.map((t) => (t.id === activeChatTab.id ? { ...t, loading: true, messages: updated } : t))
-      );
-      sendToApi(activeChatTab.id, [...activeChatTab.messages, userMsg], activeChatTab.analysisId);
-      return;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: INIT_PROMPT }],
+          analysisId: effectiveAnalysisId,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        setMessages([{ role: "assistant", content: text }]);
+      }
+
+      const finalMessages: Message[] = [
+        hiddenInit,
+        { role: "assistant", content: text },
+      ];
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === convId
+            ? { ...c, messages: finalMessages, lastMessage: text.slice(0, 80) }
+            : c
+        );
+        saveConversations(updated);
+        return updated;
+      });
+    } catch {
+      setMessages([
+        {
+          role: "assistant",
+          content: "Ready to help you analyze your content. What would you like to know?",
+        },
+      ]);
+    } finally {
+      setAiLoading(false);
     }
+  };
 
-    const id = crypto.randomUUID();
-    const userMsg: Message = { role: "user", content: text };
-    const assistantMsg: Message = { role: "assistant", content: "" };
-    const newTab: ChatTab = {
-      id,
-      title: text.length > 32 ? text.slice(0, 32) + "…" : text,
-      messages: [userMsg, assistantMsg],
-      loading: true,
-      analysisId: selectedAnalysisId,
+  const openAccountWithNewChat = (accountType: AccountType) => {
+    setMainView(accountType);
+
+    const accountName =
+      accountType === "youtube"
+        ? (ytConn?.channelTitle ?? "YouTube")
+        : accountType === "instagram"
+        ? igConn
+          ? `@${igConn.username}`
+          : "Instagram"
+        : (ttConn?.displayName ?? "TikTok");
+
+    const now = new Date();
+    const newConv: StoredConversation = {
+      id: crypto.randomUUID(),
+      title: `${accountName} · ${now.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}`,
+      accountType,
+      createdAt: now.toISOString(),
+      lastMessage: "",
+      messages: [],
     };
-    setChatTabs((prev) => [...prev, newTab]);
-    setActiveChatTabId(id);
-    sendToApi(id, [userMsg], selectedAnalysisId);
+
+    setConversations((prev) => {
+      const updated = [newConv, ...prev];
+      saveConversations(updated);
+      return updated;
+    });
+
+    setActiveConvId(newConv.id);
+    setMessages([]);
+    setAiPanelOpen(true);
+    initConversation(newConv.id);
   };
 
-  const handleBottomKeyDown = (e: React.KeyboardEvent) => {
+  const openSavedConversation = (conv: StoredConversation) => {
+    setActiveConvId(conv.id);
+    setMessages(conv.messages);
+    setMainView(conv.accountType);
+    setAiPanelOpen(true);
+  };
+
+  const handleSendMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || aiLoading) return;
+    setChatInput("");
+
+    const userMsg: Message = { role: "user", content: text };
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
+
+    if (activeConvId) {
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === activeConvId ? { ...c, messages: updatedMessages } : c
+        );
+        saveConversations(updated);
+        return updated;
+      });
+    }
+
+    await streamChat(updatedMessages, activeConvId ?? "");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleBottomSubmit();
+      handleSendMessage();
     }
   };
 
-  const openNewChatFocus = () => {
-    setActiveChatTabId(null);
-    setTimeout(() => bottomInputRef.current?.focus(), 50);
+  const startNewChatForCurrentView = () => {
+    const accountType = mainView !== "dashboard" ? (mainView as AccountType) : null;
+    if (accountType) {
+      openAccountWithNewChat(accountType);
+    }
   };
 
-  let mainContent: React.ReactNode;
-  if (activeChatTab) {
-    mainContent = <ChatMessages tab={activeChatTab} />;
-  } else if (mainView === "dashboard") {
-    mainContent = (
+  const displayMessages = messages.filter((m) => !m.hidden);
+
+  let centerContent: React.ReactNode;
+  if (mainView === "dashboard") {
+    centerContent = (
       <DashboardView
-        analysis={selectedAnalysis}
+        analysis={effectiveAnalysis}
         snapshots={snapshots}
         ytConn={ytConn}
         igConn={igConn}
         ttConn={ttConn}
-        onNavigate={navigatePlatform}
       />
     );
   } else if (mainView === "youtube") {
-    mainContent = selectedAnalysis ? (
-      <AnalysisContent analysis={selectedAnalysis} snapshots={snapshots} platformFilter="youtube" />
+    centerContent = effectiveAnalysis ? (
+      <AnalysisContent analysis={effectiveAnalysis} snapshots={snapshots} platformFilter="youtube" />
     ) : (
-      <EmptyPlatform name="YouTube" href="/api/auth/youtube" />
+      <EmptyAccountView name="YouTube" href="/api/auth/youtube" />
     );
   } else if (mainView === "instagram") {
-    mainContent = selectedAnalysis ? (
-      <AnalysisContent analysis={selectedAnalysis} snapshots={[]} platformFilter="instagram" />
+    centerContent = effectiveAnalysis ? (
+      <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="instagram" />
     ) : (
-      <EmptyPlatform name="Instagram" href="/api/auth/instagram" />
-    );
-  } else if (mainView === "tiktok") {
-    mainContent = selectedAnalysis ? (
-      <AnalysisContent analysis={selectedAnalysis} snapshots={[]} platformFilter="tiktok" />
-    ) : (
-      <EmptyPlatform name="TikTok" href="/api/auth/tiktok" />
+      <EmptyAccountView name="Instagram" href="/api/auth/instagram" />
     );
   } else {
-    mainContent = selectedAnalysis ? (
-      <AnalysisContent analysis={selectedAnalysis} snapshots={snapshots} />
-    ) : null;
+    centerContent = effectiveAnalysis ? (
+      <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="tiktok" />
+    ) : (
+      <EmptyAccountView name="TikTok" href="/api/auth/tiktok" />
+    );
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#09090b] text-white">
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <aside className="w-60 shrink-0 flex flex-col h-full border-r border-[#1f1f22] bg-[#0d0d0f] overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-4 border-b border-[#1f1f22] shrink-0">
           <div className="w-6 h-6 bg-[#ff3040] rounded flex items-center justify-center">
@@ -250,12 +369,16 @@ export default function WorkspaceShell({
           <span className="font-semibold text-[14px] tracking-tight">CreatorIQ</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
-          <div className="px-2 mb-2">
+        <div className="flex-1 overflow-y-auto py-2 space-y-1">
+          {/* Overview */}
+          <div className="px-2">
             <button
-              onClick={navigateDashboard}
+              onClick={() => {
+                setMainView("dashboard");
+                setAiPanelOpen(false);
+              }}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                mainView === "dashboard" && !activeChatTabId
+                mainView === "dashboard" && !aiPanelOpen
                   ? "bg-[#1c1c1f] text-white"
                   : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
               }`}
@@ -266,308 +389,275 @@ export default function WorkspaceShell({
           </div>
 
           {(instagramError || tiktokError) && (
-            <div className="mx-3 mb-2 flex items-start gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2">
+            <div className="mx-3 flex items-start gap-2 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2">
               <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-              <span>{instagramError ? "Instagram connection failed." : "TikTok connection failed."}</span>
+              <span>
+                {instagramError ? "Instagram connection failed." : "TikTok connection failed."}
+              </span>
             </div>
           )}
 
-          <div className="px-2 mt-1 space-y-0.5">
-            <p className="px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium">Platforms</p>
+          {/* Connected Accounts */}
+          <div className="px-2 pt-2">
+            <p className="px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium">
+              Connected Accounts
+            </p>
+            <div className="mt-0.5 space-y-0.5">
+              {ytConn ? (
+                <button
+                  onClick={() => openAccountWithNewChat("youtube")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                    mainView === "youtube"
+                      ? "bg-[#1c1c1f] text-white"
+                      : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
+                  }`}
+                >
+                  {ytConn.channelThumbnail ? (
+                    <img
+                      src={ytConn.channelThumbnail}
+                      alt=""
+                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-[#ff3040]/20 flex items-center justify-center shrink-0">
+                      <PlayCircle className="w-3 h-3 text-[#ff3040]" />
+                    </div>
+                  )}
+                  <span className="text-[12px] font-medium truncate flex-1">
+                    {ytConn.channelTitle}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/youtube"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[12px]">Connect YouTube</span>
+                </a>
+              )}
 
-            {/* YouTube */}
-            {ytConn ? (
-              <div>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => navigatePlatform("youtube")}
-                    className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors min-w-0 ${
-                      mainView === "youtube" && !activeChatTabId
-                        ? "bg-[#1c1c1f] text-white"
-                        : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
-                    }`}
-                  >
-                    {ytConn.channelThumbnail ? (
-                      <img src={ytConn.channelThumbnail} alt={ytConn.channelTitle} className="w-4 h-4 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full bg-[#ff3040] flex items-center justify-center shrink-0">
-                        <PlayCircle className="w-2.5 h-2.5 text-white" />
-                      </div>
-                    )}
-                    <span className="text-[12px] font-medium truncate">{ytConn.channelTitle}</span>
-                  </button>
-                  <button
-                    onClick={() => setYtExpanded((v) => !v)}
-                    className="w-7 h-7 flex items-center justify-center text-zinc-700 hover:text-zinc-400 rounded shrink-0"
-                  >
-                    {ytExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  </button>
-                </div>
+              {igConn ? (
+                <button
+                  onClick={() => openAccountWithNewChat("instagram")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                    mainView === "instagram"
+                      ? "bg-[#1c1c1f] text-white"
+                      : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
+                  }`}
+                >
+                  {igConn.profilePictureUrl ? (
+                    <img
+                      src={igConn.profilePictureUrl}
+                      alt=""
+                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-600/20 to-pink-500/20 flex items-center justify-center shrink-0">
+                      <Camera className="w-3 h-3 text-pink-400" />
+                    </div>
+                  )}
+                  <span className="text-[12px] font-medium truncate flex-1">
+                    @{igConn.username}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/instagram"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
+                >
+                  <Camera className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[12px]">Connect Instagram</span>
+                </a>
+              )}
 
-                {ytExpanded && (
-                  <div className="ml-3 mt-0.5 space-y-0.5">
-                    {sidebarAnalyses.length === 0 ? (
-                      <p className="px-3 py-2 text-[11px] text-zinc-700">No analyses yet</p>
-                    ) : (
-                      Object.entries(groupedByDate).map(([month, items]) => (
-                        <div key={month}>
-                          <p className="px-3 pt-2 pb-0.5 text-[10px] text-zinc-700 uppercase tracking-widest font-medium">{month}</p>
-                          {items.map((a) => {
-                            const date = new Date(a.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-                            const isSelected = a.id === selectedAnalysisId && mainView === "analysis" && !activeChatTabId;
-                            return (
-                              <button
-                                key={a.id}
-                                onClick={() => navigateAnalysis(a.id)}
-                                className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left transition-colors ${
-                                  isSelected
-                                    ? "bg-[#1c1c1f] text-white"
-                                    : "text-zinc-600 hover:bg-[#161618] hover:text-zinc-300"
-                                }`}
-                              >
-                                <Calendar className="w-3 h-3 shrink-0 opacity-60" />
-                                <span className="text-[11px] truncate flex-1">{date}</span>
-                                {a.isUnread && <span className="w-1.5 h-1.5 rounded-full bg-[#ff3040] shrink-0" />}
-                                {a.isScheduled && !a.isUnread && (
-                                  <span className="text-[9px] text-zinc-700 shrink-0">auto</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <a
-                href="/api/auth/youtube"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
-              >
-                <PlayCircle className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[12px]">Connect YouTube</span>
-              </a>
-            )}
-
-            {/* Instagram */}
-            {igConn ? (
-              <div>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => navigatePlatform("instagram")}
-                    className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors min-w-0 ${
-                      mainView === "instagram" && !activeChatTabId
-                        ? "bg-[#1c1c1f] text-white"
-                        : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
-                    }`}
-                  >
-                    {igConn.profilePictureUrl ? (
-                      <img src={igConn.profilePictureUrl} alt={igConn.username} className="w-4 h-4 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center shrink-0">
-                        <Camera className="w-2.5 h-2.5 text-white" />
-                      </div>
-                    )}
-                    <span className="text-[12px] font-medium truncate">@{igConn.username}</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-auto" />
-                  </button>
-                  <button
-                    onClick={() => setIgExpanded((v) => !v)}
-                    className="w-7 h-7 flex items-center justify-center text-zinc-700 hover:text-zinc-400 rounded shrink-0"
-                  >
-                    {igExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  </button>
-                </div>
-                {igExpanded && sidebarAnalyses.length > 0 && (
-                  <div className="ml-3 mt-0.5">
-                    <p className="px-3 py-2 text-[11px] text-zinc-700">Stats included in each analysis</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <a
-                href="/api/auth/instagram"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
-              >
-                <Camera className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[12px]">Connect Instagram</span>
-              </a>
-            )}
-
-            {/* TikTok */}
-            {ttConn ? (
-              <div>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => navigatePlatform("tiktok")}
-                    className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors min-w-0 ${
-                      mainView === "tiktok" && !activeChatTabId
-                        ? "bg-[#1c1c1f] text-white"
-                        : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
-                    }`}
-                  >
-                    {ttConn.avatarUrl ? (
-                      <img src={ttConn.avatarUrl} alt={ttConn.displayName} className="w-4 h-4 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
-                        <Music2 className="w-2.5 h-2.5 text-white" />
-                      </div>
-                    )}
-                    <span className="text-[12px] font-medium truncate">{ttConn.displayName}</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-auto" />
-                  </button>
-                  <button
-                    onClick={() => setTtExpanded((v) => !v)}
-                    className="w-7 h-7 flex items-center justify-center text-zinc-700 hover:text-zinc-400 rounded shrink-0"
-                  >
-                    {ttExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  </button>
-                </div>
-                {ttExpanded && sidebarAnalyses.length > 0 && (
-                  <div className="ml-3 mt-0.5">
-                    <p className="px-3 py-2 text-[11px] text-zinc-700">Stats included in each analysis</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <a
-                href="/api/auth/tiktok"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
-              >
-                <Music2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[12px]">Connect TikTok</span>
-              </a>
-            )}
+              {ttConn ? (
+                <button
+                  onClick={() => openAccountWithNewChat("tiktok")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                    mainView === "tiktok"
+                      ? "bg-[#1c1c1f] text-white"
+                      : "text-zinc-400 hover:bg-[#161618] hover:text-zinc-200"
+                  }`}
+                >
+                  {ttConn.avatarUrl ? (
+                    <img
+                      src={ttConn.avatarUrl}
+                      alt=""
+                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500/20 to-[#EE1D52]/20 flex items-center justify-center shrink-0">
+                      <Music2 className="w-3 h-3 text-cyan-400" />
+                    </div>
+                  )}
+                  <span className="text-[12px] font-medium truncate flex-1">
+                    {ttConn.displayName}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/tiktok"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#161618] transition-colors"
+                >
+                  <Music2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[12px]">Connect TikTok</span>
+                </a>
+              )}
+            </div>
           </div>
+
+          {/* Previous Conversations */}
+          {conversations.length > 0 && (
+            <div className="px-2 pt-3">
+              <button
+                onClick={() => setConvosExpanded((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium hover:text-zinc-500 transition-colors"
+              >
+                {convosExpanded ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+                AI Conversations
+              </button>
+              {convosExpanded && (
+                <div className="mt-0.5 space-y-0.5">
+                  {conversations.slice(0, 20).map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() => openSavedConversation(conv)}
+                      className={`w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                        activeConvId === conv.id && aiPanelOpen
+                          ? "bg-[#1c1c1f] text-white"
+                          : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
+                      }`}
+                    >
+                      <MessageSquare className="w-3 h-3 shrink-0 mt-0.5 opacity-60" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-medium truncate">{conv.title}</p>
+                        {conv.lastMessage && (
+                          <p className="text-[10px] text-zinc-700 truncate mt-0.5">
+                            {conv.lastMessage}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* Main area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Chat tab bar */}
-        {chatTabs.length > 0 && (
-          <div className="flex items-end gap-0.5 px-2 pt-2 bg-[#0a0a0c] border-b border-[#1f1f22] shrink-0 overflow-x-auto">
-            {chatTabs.map((tab) => {
-              const isActive = tab.id === activeChatTabId;
-              return (
-                <div
-                  key={tab.id}
-                  role="button"
-                  onClick={() => setActiveChatTabId(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg border-t border-l border-r min-w-0 max-w-[200px] cursor-pointer transition-colors select-none ${
-                    isActive
-                      ? "bg-[#09090b] border-[#27272a] text-white"
-                      : "bg-[#0d0d0f] border-[#1a1a1c] text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {tab.loading && <Loader2 className="w-3 h-3 animate-spin shrink-0 text-zinc-500" />}
-                  <span className="text-[11px] truncate flex-1">{tab.title}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                    className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
+      {/* ── Center ── */}
+      <main className="flex-1 overflow-y-auto min-w-0">{centerContent}</main>
+
+      {/* ── Right AI Panel ── */}
+      {aiPanelOpen && (
+        <aside className="w-[360px] shrink-0 flex flex-col h-full border-l border-[#1f1f22] bg-[#0a0a0c]">
+          {/* Header */}
+          <div className="flex items-center gap-2 px-4 py-3.5 border-b border-[#1f1f22] shrink-0">
+            <div className="w-6 h-6 bg-[#ff3040]/10 rounded-lg flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
+            </div>
+            <span className="text-[13px] font-semibold flex-1">AI Assistant</span>
             <button
-              onClick={openNewChatFocus}
-              title="New chat"
-              className="flex items-center justify-center w-7 h-7 mb-0.5 rounded-lg text-zinc-700 hover:text-zinc-400 hover:bg-[#1c1c1f] transition-colors shrink-0"
+              onClick={startNewChatForCurrentView}
+              title="New conversation"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-[#1c1c1f] transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
-          </div>
-        )}
-
-        {/* Content */}
-        <main className="flex-1 overflow-y-auto">
-          {mainContent}
-        </main>
-
-        {/* Bottom AI bar */}
-        <div className="shrink-0 border-t border-[#1f1f22] bg-[#09090b] px-4 pt-3 pb-4">
-          {!activeChatTab && bottomInput === "" && (
-            <div className="flex items-center gap-2 mb-2.5 overflow-x-auto">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => {
-                    setBottomInput(s);
-                    bottomInputRef.current?.focus();
-                  }}
-                  className="shrink-0 text-[11px] text-zinc-500 hover:text-zinc-300 bg-[#111113] hover:bg-[#1c1c1f] border border-[#27272a] rounded-full px-3 py-1 transition-colors whitespace-nowrap"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 focus-within:border-[#ff3040]/50 transition-colors">
-              <textarea
-                ref={bottomInputRef}
-                value={bottomInput}
-                onChange={(e) => setBottomInput(e.target.value)}
-                onKeyDown={handleBottomKeyDown}
-                placeholder={activeChatTab ? "Continue this conversation…" : "Ask AI anything about your channel…"}
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[80px]"
-                style={{ fieldSizing: "content" } as React.CSSProperties}
-              />
-            </div>
             <button
-              onClick={handleBottomSubmit}
-              disabled={!bottomInput.trim() || (!!activeChatTab && activeChatTab.loading)}
-              className="w-9 h-9 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-30 disabled:cursor-not-allowed rounded-xl flex items-center justify-center shrink-0 transition-colors"
+              onClick={() => setAiPanelOpen(false)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-[#1c1c1f] transition-colors"
             >
-              {activeChatTab?.loading ? (
-                <Loader2 className="w-4 h-4 text-white animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 text-white" />
-              )}
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-function ChatMessages({ tab }: { tab: ChatTab }) {
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [tab.messages]);
-
-  return (
-    <div className="max-w-3xl mx-auto px-6 py-8 space-y-4">
-      {tab.messages.map((msg, i) => (
-        <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-          <div
-            className={`max-w-[82%] text-sm rounded-2xl px-4 py-3 leading-relaxed whitespace-pre-wrap ${
-              msg.role === "user"
-                ? "bg-[#ff3040] text-white"
-                : "bg-[#1c1c1f] text-zinc-200 border border-[#27272a]"
-            }`}
-          >
-            {msg.content || (
-              msg.role === "assistant" && tab.loading && i === tab.messages.length - 1
-                ? <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
-                : null
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+            {displayMessages.length === 0 && aiLoading && (
+              <div className="flex gap-2.5 items-start">
+                <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles className="w-3 h-3 text-[#ff3040]" />
+                </div>
+                <div className="bg-[#111113] border border-[#27272a] rounded-2xl rounded-tl-sm px-4 py-3">
+                  <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                </div>
+              </div>
             )}
+
+            {displayMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex gap-2.5 items-start ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+              >
+                {msg.role === "assistant" && (
+                  <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles className="w-3 h-3 text-[#ff3040]" />
+                  </div>
+                )}
+                <div
+                  className={`max-w-[87%] text-[13px] leading-relaxed whitespace-pre-wrap rounded-2xl px-4 py-3 ${
+                    msg.role === "user"
+                      ? "bg-[#ff3040] text-white rounded-tr-sm"
+                      : "bg-[#111113] text-zinc-200 border border-[#27272a] rounded-tl-sm"
+                  }`}
+                >
+                  {msg.content ||
+                    (msg.role === "assistant" &&
+                    aiLoading &&
+                    i === displayMessages.length - 1 ? (
+                      <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                    ) : null)}
+                </div>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
           </div>
-        </div>
-      ))}
-      <div ref={endRef} />
+
+          {/* Input */}
+          <div className="shrink-0 border-t border-[#1f1f22] px-3 py-3">
+            <div className="flex items-end gap-2">
+              <div className="flex-1 bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 focus-within:border-[#ff3040]/40 transition-colors">
+                <textarea
+                  ref={inputRef}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask anything about your channel…"
+                  rows={1}
+                  className="w-full bg-transparent text-[13px] text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[120px]"
+                  style={{ fieldSizing: "content" } as React.CSSProperties}
+                />
+              </div>
+              <button
+                onClick={handleSendMessage}
+                disabled={!chatInput.trim() || aiLoading}
+                className="w-8 h-8 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-30 disabled:cursor-not-allowed rounded-lg flex items-center justify-center shrink-0 transition-colors"
+              >
+                {aiLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5 text-white" />
+                )}
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }
 
-function EmptyPlatform({ name, href }: { name: string; href: string }) {
+function EmptyAccountView({ name, href }: { name: string; href: string }) {
   return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center max-w-sm px-6">

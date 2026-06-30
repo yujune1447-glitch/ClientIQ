@@ -59,12 +59,16 @@ export default function AnalyzingPage() {
           setDone(true);
           source.close();
           const analysisId = msg.analysisId as string;
+          console.log("[analyzing] complete event received. analysisId=%s", analysisId ?? "MISSING");
           if (analysisId) {
-            router.push(`/analysis/${analysisId}`);
+            router.push(`/workspace?analysis=${analysisId}`);
+          } else {
+            console.error("[analyzing] No analysisId in complete event — cannot redirect to results.");
           }
           break;
         }
         case "error":
+          console.error("[analyzing] error event: message=%s", msg.message);
           if (msg.message === "needs_reauth") {
             source.close();
             router.replace("/api/auth/youtube");

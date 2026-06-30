@@ -31,37 +31,62 @@ export async function GET(request: NextRequest) {
 
       try {
         const userId = request.cookies.get("user_id")?.value;
+        console.log("[analyze] Request received. user_id_from_cookie=%s", userId ?? "MISSING");
         if (!userId) { emit({ event: "error", message: "Not authenticated" }); return; }
 
         const supabase = createAdminClient();
 
-        const [{ data: conn }, { data: userData }, { data: igConn }, { data: ttConn }] = await Promise.all([
+        const [{ data: conn, error: connErr }, { data: userData }, { data: igConn }, { data: ttConn }] = await Promise.all([
           supabase.from("youtube_connections").select("*").eq("user_id", userId).single(),
           supabase.from("users").select("niche").eq("id", userId).single(),
           supabase.from("instagram_connections").select("*").eq("user_id", userId).maybeSingle(),
           supabase.from("tiktok_connections").select("*").eq("user_id", userId).maybeSingle(),
         ]);
 
-        if (!conn) { emit({ event: "error", message: "No YouTube connection found" }); return; }
+        console.log("[analyze] DB lookup: conn_found=%s conn_err=%s refresh_token_present=%s token_expires_at=%s",
+          !!conn, connErr?.message ?? "none", !!conn?.refresh_token, conn?.token_expires_at ?? "null");
+
+        if (!conn) {
+          console.error("[analyze] No YouTube connection for user_id=%s. connErr=%j", userId, connErr);
+          emit({ event: "error", message: "No YouTube connection found" });
+          return;
+        }
         const niche: string | null = userData?.niche ?? null;
 
         let accessToken: string = conn.access_token;
-        let tokenExpiresAt: Date = new Date(conn.token_expires_at);
+        let tokenExpiresAt: Date = new Date(conn.token_expires_at ?? 0);
+
+        console.log("[analyze] Token status: expires_at=%s is_expired=%s",
+          tokenExpiresAt.toISOString(), tokenExpiresAt <= new Date());
 
         const maybeRefresh = async () => {
           if (tokenExpiresAt <= new Date()) {
+            console.log("[analyze] Access token expired — attempting refresh. refresh_token_present=%s", !!conn.refresh_token);
+            if (!conn.refresh_token) {
+              console.error("[analyze] No refresh_token stored — cannot refresh. needs_reauth.");
+              emit({ event: "error", message: "needs_reauth" });
+              throw new Error("needs_reauth");
+            }
             try {
               const refreshed = await refreshAccessToken(conn.refresh_token);
               accessToken = refreshed.accessToken;
               tokenExpiresAt = new Date(Date.now() + refreshed.expiresIn * 1000);
-              await supabase.from("youtube_connections").update({
+              console.log("[analyze] Token refreshed OK. new_expires_at=%s", tokenExpiresAt.toISOString());
+              const { error: updateErr } = await supabase.from("youtube_connections").update({
                 access_token: accessToken,
                 token_expires_at: tokenExpiresAt.toISOString(),
               }).eq("id", conn.id);
-            } catch {
+              if (updateErr) {
+                console.error("[analyze] Failed to persist refreshed token to DB: %j — will continue with in-memory token", updateErr);
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error("[analyze] refreshAccessToken FAILED: %s — emitting needs_reauth", msg);
               emit({ event: "error", message: "needs_reauth" });
               throw new Error("needs_reauth");
             }
+          } else {
+            console.log("[analyze] Token still valid, skipping refresh.");
           }
         };
 
@@ -211,7 +236,7 @@ export async function GET(request: NextRequest) {
           igSummary ? `yes(@${igSummary.username} ${igSummary.topPosts.length}posts)` : "no",
           tikTokSummary ? `yes(@${tikTokSummary.displayName} ${tikTokSummary.videos.length}videos)` : "no");
 
-        console.log("[analyze] Saving initial analysis to Supabase...");
+        console.log("[analyze] Saving initial analysis to Supabase. user_id=%s channel_id=%s", userId, conn.channel_id);
         const { data: analysis, error: saveError } = await supabase
           .from("analyses")
           .insert({
@@ -232,7 +257,7 @@ export async function GET(request: NextRequest) {
           emit({ event: "error", message: "Failed to save analysis" });
           return;
         }
-        console.log("[analyze] Analysis saved with id=%s", analysis.id);
+        console.log("[analyze] Analysis INSERT OK. analysis_id=%s user_id=%s", analysis.id, userId);
 
         emit({ event: "step_start", step: "comments_intel" });
         let commentIntelligence;

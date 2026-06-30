@@ -16,11 +16,13 @@ export default async function AnalysisPage({
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
 
+  console.log("[analysis-page] Load. id=%s user_id=%s", id, userId ?? "MISSING");
+
   if (!userId) redirect("/");
 
   const supabase = createAdminClient();
 
-  const [{ data: analysis }, { data: snapshots }] = await Promise.all([
+  const [{ data: analysis, error: analysisErr }, { data: snapshots }] = await Promise.all([
     supabase
       .from("analyses")
       .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at")
@@ -34,7 +36,12 @@ export default async function AnalysisPage({
       .order("created_at", { ascending: true }),
   ]);
 
-  if (!analysis) redirect("/workspace");
+  console.log("[analysis-page] analysis_found=%s err=%s", !!analysis, analysisErr?.message ?? "none");
+
+  if (!analysis) {
+    console.error("[analysis-page] Analysis not found for id=%s user_id=%s — redirecting to /workspace. err=%j", id, userId, analysisErr);
+    redirect("/workspace");
+  }
 
   const data = {
     id: analysis.id,
