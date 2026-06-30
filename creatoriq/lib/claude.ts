@@ -205,48 +205,77 @@ export async function generateContentBrief(
   tikTokSummary: TikTokSummary | null = null,
   commentIntel: CommentIntelligence | null = null
 ): Promise<{ brief: ContentBrief; autopsy: ContentAutopsy }> {
-  const prompt = [
-    buildChannelSection(summary),
-    nicheSummary ? buildNicheSection(nicheSummary) : "",
-    igSummary ? buildInstagramSection(igSummary) : "",
-    tikTokSummary ? buildTikTokSection(tikTokSummary) : "",
-    commentIntel && commentIntel.totalCommentsAnalysed >= 10 ? buildCommentIntelSection(commentIntel) : "",
-  ].join("\n");
+  const t0 = Date.now();
+  const channelSection = buildChannelSection(summary);
+  const nicheSection = nicheSummary ? buildNicheSection(nicheSummary) : "";
+  const igSection = igSummary ? buildInstagramSection(igSummary) : "";
+  const ttSection = tikTokSummary ? buildTikTokSection(tikTokSummary) : "";
+  const commentSection = commentIntel && commentIntel.totalCommentsAnalysed >= 10 ? buildCommentIntelSection(commentIntel) : "";
+
+  console.log("[claude] Prompt sections: channel=%d niche=%d instagram=%d tiktok=%d commentIntel=%d chars",
+    channelSection.length, nicheSection.length, igSection.length, ttSection.length, commentSection.length);
+
+  const prompt = [channelSection, nicheSection, igSection, ttSection, commentSection].join("\n");
+  console.log("[claude] Total prompt: %d chars (~%d tokens estimated)", prompt.length, Math.round(prompt.length / 4));
+  console.log("[claude] Summary shape: topPerformers=%d bottomPerformers=%d outliers=%d topCommenters=%d",
+    summary.topPerformers.length, summary.bottomPerformers.length, summary.outliers.length,
+    summary.topCommenters?.length ?? 0);
+  console.log("[claude] Comment intel included: %s (comments=%d themes=%d videoIdeas=%d)",
+    commentSection.length > 0 ? "YES" : "NO",
+    commentIntel?.totalCommentsAnalysed ?? 0,
+    commentIntel?.themes.length ?? 0,
+    commentIntel?.videoIdeas.length ?? 0);
 
   let message: Awaited<ReturnType<typeof client.messages.create>>;
   try {
+    console.log("[claude] Calling Anthropic API (max_tokens=8000)...");
     message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8000,
       system: SYSTEM,
       messages: [{ role: "user", content: prompt }],
     });
+    console.log("[claude] API response in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
+      Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[claude] Anthropic API call failed:", msg);
+    console.error("[claude] Anthropic API call FAILED after %dms: %s", Date.now() - t0, msg);
+    if (err instanceof Error && err.stack) console.error("[claude] Stack:", err.stack);
     throw new Error(`Brief generation API error: ${msg}`);
   }
 
   if (message.stop_reason === "max_tokens") {
-    console.error("[claude] Response truncated at max_tokens. Prompt length:", prompt.length, "chars");
+    console.error("[claude] TRUNCATED — hit max_tokens=8000. input_tokens=%d output_tokens=%d prompt_chars=%d",
+      message.usage.input_tokens, message.usage.output_tokens, prompt.length);
     throw new Error("Brief generation was truncated — prompt too long. Try with fewer data sources connected.");
   }
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  console.log("[claude] Raw response: %d chars, starts with: %s", raw.length, raw.slice(0, 80).replace(/\n/g, "\\n"));
 
   let parsed: { brief: Record<string, unknown>; autopsy: ContentAutopsy };
   try {
     parsed = JSON.parse(text);
+    console.log("[claude] JSON parsed OK. Top-level keys: %s", Object.keys(parsed).join(", "));
+    if (parsed.brief) {
+      console.log("[claude] brief keys: %s", Object.keys(parsed.brief).join(", "));
+      console.log("[claude] brief.titleOptions=%d hook=%s thumbnail=%s dataEvidence=%d",
+        Array.isArray(parsed.brief.titleOptions) ? parsed.brief.titleOptions.length : "missing",
+        typeof parsed.brief.hook === "object" ? "object" : typeof parsed.brief.hook,
+        typeof parsed.brief.thumbnail === "object" ? "object" : typeof parsed.brief.thumbnail,
+        Array.isArray(parsed.brief.dataEvidence) ? parsed.brief.dataEvidence.length : "missing"
+      );
+    }
   } catch (err) {
-    console.error("[claude] JSON parse failed:", err instanceof Error ? err.message : err);
-    console.error("[claude] Raw response (first 800 chars):", text.slice(0, 800));
-    console.error("[claude] Raw response (last 200 chars):", text.slice(-200));
+    console.error("[claude] JSON.parse FAILED: %s", err instanceof Error ? err.message : String(err));
+    console.error("[claude] Raw response (first 800 chars):\n%s", text.slice(0, 800));
+    console.error("[claude] Raw response (last 200 chars):\n%s", text.slice(-200));
     throw new Error(`Brief JSON parse failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!parsed.brief || !parsed.autopsy) {
-    console.error("[claude] Response missing brief or autopsy keys. Keys present:", Object.keys(parsed));
+    console.error("[claude] Response missing brief or autopsy. Keys present: %s", Object.keys(parsed).join(", "));
     throw new Error("Brief response missing required keys (brief/autopsy)");
   }
 
@@ -262,5 +291,7 @@ export async function generateContentBrief(
     dataEvidence: (parsed.brief.dataEvidence as ContentBrief["dataEvidence"]) ?? [],
   };
 
+  console.log("[claude] Brief generated in %dms. weeklyIdea='%s...' titleOptions=%d dataEvidence=%d",
+    Date.now() - t0, brief.weeklyIdea.slice(0, 60), brief.titleOptions.length, brief.dataEvidence.length);
   return { brief, autopsy: parsed.autopsy };
 }

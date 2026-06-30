@@ -192,7 +192,15 @@ export async function GET(request: NextRequest) {
 
         // ── Build summary + store raw + call Claude ───────────────────────
         const summary = buildSummary(scored, commentsMap, channelInfo);
+        console.log("[analyze] Summary built: topPerformers=%d bottomPerformers=%d outliers=%d topCommenters=%d totalVideos=%d",
+          summary.topPerformers.length, summary.bottomPerformers.length, summary.outliers.length,
+          summary.topCommenters?.length ?? 0, summary.totalVideosAnalysed);
+        console.log("[analyze] Data sources: niche=%s instagram=%s tiktok=%s",
+          nicheSummary ? `yes(${nicheSummary.niche})` : "no",
+          igSummary ? `yes(@${igSummary.username} ${igSummary.topPosts.length}posts)` : "no",
+          tikTokSummary ? `yes(@${tikTokSummary.displayName} ${tikTokSummary.videos.length}videos)` : "no");
 
+        console.log("[analyze] Saving initial analysis to Supabase...");
         const { data: analysis, error: saveError } = await supabase
           .from("analyses")
           .insert({
@@ -208,16 +216,22 @@ export async function GET(request: NextRequest) {
           .single();
 
         if (saveError || !analysis) {
+          console.error("[analyze] Supabase analyses INSERT failed. error.code=%s error.message=%s error.details=%s",
+            saveError?.code, saveError?.message, saveError?.details);
           emit({ event: "error", message: "Failed to save analysis" });
           return;
         }
+        console.log("[analyze] Analysis saved with id=%s", analysis.id);
 
         emit({ event: "step_start", step: "comments_intel" });
         let commentIntelligence;
         try {
           commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary);
+          console.log("[analyze] Comment intelligence OK: themes=%d videoIdeas=%d personas=%d topCommenters=%d",
+            commentIntelligence.themes.length, commentIntelligence.videoIdeas.length,
+            commentIntelligence.audiencePersonas.length, commentIntelligence.topCommenters.length);
         } catch (err) {
-          console.error("[analyze] Comment intelligence failed (non-fatal):", err instanceof Error ? err.message : err);
+          console.error("[analyze] Comment intelligence FAILED (non-fatal): %s", err instanceof Error ? err.message : String(err));
           commentIntelligence = {
             totalCommentsAnalysed: 0, themes: [], videoIdeas: [],
             emotionalSignals: { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
@@ -229,22 +243,34 @@ export async function GET(request: NextRequest) {
         emit({ event: "step_done", step: "comments_intel" });
 
         emit({ event: "step_start", step: "save" });
+        console.log("[analyze] Starting brief generation...");
         let brief, autopsy;
         try {
           ({ brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence));
+          console.log("[analyze] Brief generated. weeklyIdea='%s...' titleOptions=%d dataEvidence=%d",
+            brief.weeklyIdea.slice(0, 60), brief.titleOptions.length, brief.dataEvidence.length);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Brief generation failed";
-          console.error("[analyze] generateContentBrief failed:", msg);
+          console.error("[analyze] generateContentBrief FAILED: %s", msg);
+          if (err instanceof Error && err.stack) console.error("[analyze] Stack:", err.stack.split("\n").slice(0, 5).join("\n"));
           emit({ event: "error", message: msg });
           return;
         }
 
+        console.log("[analyze] Saving snapshot...");
         await saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos, commentIntelligence });
 
-        await supabase
+        console.log("[analyze] Updating analysis with brief/autopsy/comment_intelligence...");
+        const { error: updateError } = await supabase
           .from("analyses")
           .update({ brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary, comment_intelligence: commentIntelligence })
           .eq("id", analysis.id);
+
+        if (updateError) {
+          console.error("[analyze] Supabase analyses UPDATE failed. code=%s message=%s", updateError.code, updateError.message);
+        } else {
+          console.log("[analyze] Analysis updated successfully.");
+        }
 
         emit({ event: "step_done", step: "save" });
         emit({ event: "complete", analysisId: analysis.id });

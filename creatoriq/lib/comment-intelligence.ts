@@ -134,41 +134,79 @@ export async function analyzeComments(
   tikTokSummary: TikTokSummary | null,
   igSummary: InstagramSummary | null
 ): Promise<CommentIntelligence> {
+  const t0 = Date.now();
+  console.log("[comment-intel] Starting comment collection");
+  console.log("[comment-intel] Input: topPerformers=%d bottomPerformers=%d tiktok=%s instagram=%s",
+    summary.topPerformers.length, summary.bottomPerformers.length,
+    tikTokSummary ? `yes(${tikTokSummary.topVideos.length} videos)` : "no",
+    igSummary ? `yes(${igSummary.topPosts.length} posts)` : "no"
+  );
+
+  const ytTopCount = summary.topPerformers.reduce((n, v) => n + (v.topComments?.length ?? 0), 0);
+  const ytBotCount = summary.bottomPerformers.reduce((n, v) => n + (v.topComments?.length ?? 0), 0);
+  const ttCount = tikTokSummary?.topVideos.reduce((n, v) => n + (v.top_comments?.length ?? 0), 0) ?? 0;
+  const igCount = igSummary?.topPosts.slice(0, 5).reduce((n, p) => n + (p.topComments?.length ?? 0), 0) ?? 0;
+  console.log("[comment-intel] Comments available: yt-top=%d yt-bottom=%d tiktok=%d instagram=%d",
+    ytTopCount, ytBotCount, ttCount, igCount);
+
   const comments = collectComments(summary, tikTokSummary, igSummary);
   const topCommenters = (summary.topCommenters ?? []).map((c) => ({ author: c.author, commentCount: c.count }));
+  console.log("[comment-intel] Collected %d comments after cap (topCommenters=%d)", comments.length, topCommenters.length);
 
-  if (comments.length < 10) return emptyIntelligence(comments.length);
+  if (comments.length < 10) {
+    console.log("[comment-intel] Too few comments (%d < 10), returning empty intelligence", comments.length);
+    return emptyIntelligence(comments.length);
+  }
+
+  const prompt = buildPrompt(comments);
+  console.log("[comment-intel] Prompt built: %d chars, %d comment groups", prompt.length, comments.length);
 
   let message: Awaited<ReturnType<typeof client.messages.create>>;
   try {
+    console.log("[comment-intel] Calling Anthropic API...");
     message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: "You are an expert audience intelligence analyst. Return only valid JSON.",
-      messages: [{ role: "user", content: buildPrompt(comments) }],
+      messages: [{ role: "user", content: prompt }],
     });
+    console.log("[comment-intel] API response received in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
+      Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
   } catch (err) {
-    console.error("[comment-intelligence] Anthropic API call failed:", err instanceof Error ? err.message : err);
+    console.error("[comment-intel] Anthropic API call FAILED after %dms: %s",
+      Date.now() - t0, err instanceof Error ? err.message : String(err));
+    if (err instanceof Error && err.stack) console.error("[comment-intel] Stack:", err.stack);
     return { ...emptyIntelligence(comments.length), topCommenters };
   }
 
   if (message.stop_reason === "max_tokens") {
-    console.error("[comment-intelligence] Response truncated (max_tokens). Comments analysed:", comments.length);
+    console.error("[comment-intel] TRUNCATED — hit max_tokens limit. input_tokens=%d output_tokens=%d comments=%d prompt_chars=%d",
+      message.usage.input_tokens, message.usage.output_tokens, comments.length, prompt.length);
     return { ...emptyIntelligence(comments.length), topCommenters };
   }
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  console.log("[comment-intel] Raw response: %d chars, starts with: %s", raw.length, raw.slice(0, 60).replace(/\n/g, "\\n"));
 
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(text);
+    console.log("[comment-intel] JSON parsed OK. Keys: %s", Object.keys(parsed).join(", "));
+    console.log("[comment-intel] themes=%d videoIdeas=%d audiencePersonas=%d keyInsight=%s",
+      Array.isArray(parsed.themes) ? parsed.themes.length : "missing",
+      Array.isArray(parsed.videoIdeas) ? parsed.videoIdeas.length : "missing",
+      Array.isArray(parsed.audiencePersonas) ? parsed.audiencePersonas.length : "missing",
+      typeof parsed.keyInsight === "string" ? "present" : "missing"
+    );
   } catch (err) {
-    console.error("[comment-intelligence] JSON parse failed:", err instanceof Error ? err.message : err);
-    console.error("[comment-intelligence] Raw response (first 500 chars):", text.slice(0, 500));
+    console.error("[comment-intel] JSON.parse FAILED: %s", err instanceof Error ? err.message : String(err));
+    console.error("[comment-intel] Text before parse (first 800):\n%s", text.slice(0, 800));
+    console.error("[comment-intel] Text before parse (last 200):\n%s", text.slice(-200));
     return { ...emptyIntelligence(comments.length), topCommenters };
   }
 
+  console.log("[comment-intel] Done in %dms", Date.now() - t0);
   return {
     totalCommentsAnalysed: comments.length,
     themes: parsed.themes as CommentIntelligence["themes"] ?? [],
