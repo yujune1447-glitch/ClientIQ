@@ -124,10 +124,17 @@ export default async function DashboardPage({
               This Week&apos;s Content Brief
             </h2>
           </div>
-          <BriefCard brief={brief} />
+          {brief ? (
+            <BriefCard brief={brief} />
+          ) : (
+            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 text-sm text-zinc-500">
+              Brief not available for this analysis.
+            </div>
+          )}
         </section>
 
         {/* Channel Autopsy */}
+        {autopsy && (
         <section>
           <div className="flex items-center gap-2 mb-4">
             <BarChart2 className="w-4 h-4 text-[#ff3040]" />
@@ -191,6 +198,7 @@ export default async function DashboardPage({
             </div>
           </div>
         </section>
+        )}
 
         {/* Video performance */}
         <section>

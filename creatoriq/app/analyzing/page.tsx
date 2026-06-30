@@ -51,7 +51,7 @@ export default function AnalyzingPage() {
         case "details_progress":
           setDetailsProgress({ current: msg.current as number, total: msg.total as number });
           break;
-        case "complete":
+        case "complete": {
           setStatuses((prev) =>
             Object.fromEntries(
               STEPS.map((s) => [s.id, prev[s.id] === "skipped" ? "skipped" : "complete"])
@@ -59,8 +59,12 @@ export default function AnalyzingPage() {
           );
           setDone(true);
           source.close();
-          router.push(`/dashboard?id=${msg.analysisId}`);
+          const analysisId = msg.analysisId as string;
+          if (analysisId) {
+            router.push(`/dashboard?id=${analysisId}`);
+          }
           break;
+        }
         case "error":
           if (msg.message === "needs_reauth") {
             source.close();
@@ -126,7 +130,7 @@ export default function AnalyzingPage() {
               </h1>
               <p className="text-sm text-zinc-500 mb-10">
                 {done
-                  ? "Redirecting to your dashboard..."
+                  ? "Redirecting to your content brief..."
                   : activeStep
                   ? activeStep.sublabel
                   : "Preparing..."}

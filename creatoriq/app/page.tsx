@@ -32,9 +32,9 @@ export default async function LandingPage() {
           <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-white transition-colors">
+          <a href="/api/auth/youtube" className="text-sm text-zinc-400 hover:text-white transition-colors">
             Sign in
-          </Link>
+          </a>
           <Link
             href="/analyzing"
             className="text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
