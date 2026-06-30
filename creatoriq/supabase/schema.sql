@@ -35,6 +35,9 @@ create table if not exists analyses (
   total_videos int,
   is_unread boolean default false,
   generated_by text default 'manual',
+  instagram_summary jsonb,
+  tiktok_summary jsonb,
+  comment_intelligence jsonb,
   created_at timestamptz default now()
 );
 
@@ -58,6 +61,7 @@ create table if not exists channel_snapshots (
   brief_match_video_title text,
   brief_match_score int,
   content_breakdown jsonb,
+  comment_sentiment jsonb,
   created_at timestamptz default now()
 );
 

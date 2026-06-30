@@ -191,7 +191,6 @@ export async function GET(request: NextRequest) {
         emit({ event: "step_done", step: "rank" });
 
         // ── Build summary + store raw + call Claude ───────────────────────
-        emit({ event: "step_start", step: "save" });
         const summary = buildSummary(scored, commentsMap, channelInfo);
 
         const { data: analysis, error: saveError } = await supabase
@@ -214,11 +213,11 @@ export async function GET(request: NextRequest) {
         }
 
         emit({ event: "step_start", step: "comments_intel" });
-        const [{ brief, autopsy }, commentIntelligence] = await Promise.all([
-          generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary),
-          analyzeComments(summary, tikTokSummary, igSummary),
-        ]);
+        const commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary);
         emit({ event: "step_done", step: "comments_intel" });
+
+        emit({ event: "step_start", step: "save" });
+        const { brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence);
 
         await saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos, commentIntelligence });
 

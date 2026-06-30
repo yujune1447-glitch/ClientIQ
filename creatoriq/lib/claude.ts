@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary } from "@/types";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -96,6 +96,39 @@ ${topPosts.map((p, i) => `${i + 1}. [${p.media_type}] ${p.caption?.slice(0, 120)
    Likes: ${fmt(p.like_count)} | Comments: ${p.comments_count} | Reach: ${fmt(p.reach)} | Saved: ${fmt(p.saved)} | Posted: ${p.timestamp.slice(0, 10)}`).join("\n\n")}`;
 }
 
+function buildCommentIntelSection(intel: CommentIntelligence): string {
+  const { themes, videoIdeas, emotionalSignals, sentimentBreakdown, audiencePersonas, topCommenters, keyInsight, totalCommentsAnalysed } = intel;
+  const lines: string[] = [`\nAUDIENCE COMMENT INTELLIGENCE (${totalCommentsAnalysed} comments analysed)\n${"=".repeat(60)}`];
+  if (keyInsight) lines.push(`\nKEY AUDIENCE INSIGHT\n${keyInsight}`);
+  lines.push(`\nSENTIMENT BREAKDOWN\nPositive: ${sentimentBreakdown.positive}% | Neutral: ${sentimentBreakdown.neutral}% | Negative: ${sentimentBreakdown.negative}%`);
+  lines.push(`\nEMOTIONAL SIGNALS\nExcited: ${emotionalSignals.excited}% | Grateful: ${emotionalSignals.grateful}% | Curious: ${emotionalSignals.curious}% | Confused: ${emotionalSignals.confused}% | Critical: ${emotionalSignals.critical}% | Requesting: ${emotionalSignals.requesting}%`);
+  if (themes.length) {
+    lines.push(`\nCOMMENT THEMES (${themes.length} clusters)`);
+    for (const t of themes) {
+      lines.push(`  [${t.sentiment.toUpperCase()}] "${t.name}" (${t.commentCount} comments) — ${t.description}`);
+      if (t.exampleComments[0]) lines.push(`    Example: "${t.exampleComments[0].slice(0, 100)}"`);
+    }
+  }
+  if (videoIdeas.length) {
+    lines.push(`\nVIDEO IDEAS FROM AUDIENCE QUESTIONS (${videoIdeas.length} ideas)`);
+    for (const idea of videoIdeas) {
+      lines.push(`  [${idea.estimatedDemand.toUpperCase()} demand] "${idea.idea}"`);
+      lines.push(`    Source: "${idea.sourceComment.slice(0, 120)}"`);
+    }
+  }
+  if (audiencePersonas.length) {
+    lines.push(`\nAUDIENCE PERSONAS`);
+    for (const p of audiencePersonas) {
+      lines.push(`  ${p.type}: ${p.description}`);
+    }
+  }
+  if (topCommenters.length) {
+    lines.push(`\nMOST ENGAGED COMMENTERS (superfans)`);
+    lines.push(topCommenters.slice(0, 5).map((c) => `  ${c.author} (${c.commentCount} comments)`).join("\n"));
+  }
+  return lines.join("\n");
+}
+
 function buildTikTokSection(tt: TikTokSummary): string {
   const topVideos = tt.topVideos.slice(0, 10);
   return `
@@ -170,13 +203,15 @@ export async function generateContentBrief(
   summary: ChannelSummary,
   nicheSummary: NicheSummary | null,
   igSummary: InstagramSummary | null = null,
-  tikTokSummary: TikTokSummary | null = null
+  tikTokSummary: TikTokSummary | null = null,
+  commentIntel: CommentIntelligence | null = null
 ): Promise<{ brief: ContentBrief; autopsy: ContentAutopsy }> {
   const prompt = [
     buildChannelSection(summary),
     nicheSummary ? buildNicheSection(nicheSummary) : "",
     igSummary ? buildInstagramSection(igSummary) : "",
     tikTokSummary ? buildTikTokSection(tikTokSummary) : "",
+    commentIntel && commentIntel.totalCommentsAnalysed >= 10 ? buildCommentIntelSection(commentIntel) : "",
   ].join("\n");
 
   const message = await client.messages.create({
