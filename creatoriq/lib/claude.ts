@@ -16,11 +16,10 @@ function fmtSecs(s: number) {
 }
 
 function formatVideo(v: VideoWithScore, i: number) {
-  const comments = v.topComments?.slice(0, 5).map((c) => `"${c.slice(0, 120)}"`).join(" | ") ?? "none";
-  return `${i + 1}. "${v.title}"
-   Views: ${fmt(v.viewCount)} (${v.viewsVsAverage > 0 ? "+" : ""}${v.viewsVsAverage}% vs avg) | Score: ${v.performanceScore}
-   CTR: ${v.ctr?.toFixed(2) ?? "N/A"}% | Retention: ${v.averageViewPercentage?.toFixed(1) ?? "N/A"}% | Published: ${v.publishedAt.slice(0, 10)}
-   Top comments: ${comments}`;
+  const comments = v.topComments?.slice(0, 3).map((c) => `"${c.slice(0, 80)}"`).join(" | ") ?? "none";
+  return `${i + 1}. "${v.title.slice(0, 80)}"
+   Views: ${fmt(v.viewCount)} (${v.viewsVsAverage > 0 ? "+" : ""}${v.viewsVsAverage}% vs avg) | Score: ${v.performanceScore} | CTR: ${v.ctr?.toFixed(2) ?? "N/A"}% | Retention: ${v.averageViewPercentage?.toFixed(1) ?? "N/A"}%
+   Comments: ${comments}`;
 }
 
 function buildChannelSection(summary: ChannelSummary): string {
@@ -214,27 +213,53 @@ export async function generateContentBrief(
     commentIntel && commentIntel.totalCommentsAnalysed >= 10 ? buildCommentIntelSection(commentIntel) : "",
   ].join("\n");
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: SYSTEM,
-    messages: [{ role: "user", content: prompt }],
-  });
+  let message: Awaited<ReturnType<typeof client.messages.create>>;
+  try {
+    message = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8000,
+      system: SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[claude] Anthropic API call failed:", msg);
+    throw new Error(`Brief generation API error: ${msg}`);
+  }
+
+  if (message.stop_reason === "max_tokens") {
+    console.error("[claude] Response truncated at max_tokens. Prompt length:", prompt.length, "chars");
+    throw new Error("Brief generation was truncated — prompt too long. Try with fewer data sources connected.");
+  }
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  const parsed = JSON.parse(text);
+
+  let parsed: { brief: Record<string, unknown>; autopsy: ContentAutopsy };
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    console.error("[claude] JSON parse failed:", err instanceof Error ? err.message : err);
+    console.error("[claude] Raw response (first 800 chars):", text.slice(0, 800));
+    console.error("[claude] Raw response (last 200 chars):", text.slice(-200));
+    throw new Error(`Brief JSON parse failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!parsed.brief || !parsed.autopsy) {
+    console.error("[claude] Response missing brief or autopsy keys. Keys present:", Object.keys(parsed));
+    throw new Error("Brief response missing required keys (brief/autopsy)");
+  }
 
   const brief: ContentBrief = {
-    weeklyIdea: parsed.brief.weeklyIdea ?? "",
-    titleOptions: (parsed.brief.titleOptions ?? []).slice(0, 3),
-    hook: parsed.brief.hook ?? "",
-    recommendedLength: parsed.brief.recommendedLength ?? "",
-    format: parsed.brief.format ?? "",
-    estimatedPerformance: parsed.brief.estimatedPerformance ?? "",
-    keyTalkingPoints: parsed.brief.keyTalkingPoints ?? [],
-    thumbnail: parsed.brief.thumbnail ?? parsed.brief.thumbnailDirection ?? "",
-    dataEvidence: parsed.brief.dataEvidence ?? [],
+    weeklyIdea: String(parsed.brief.weeklyIdea ?? ""),
+    titleOptions: ((parsed.brief.titleOptions as string[]) ?? []).slice(0, 3),
+    hook: (parsed.brief.hook as ContentBrief["hook"]) ?? "",
+    recommendedLength: String(parsed.brief.recommendedLength ?? ""),
+    format: String(parsed.brief.format ?? ""),
+    estimatedPerformance: String(parsed.brief.estimatedPerformance ?? ""),
+    keyTalkingPoints: (parsed.brief.keyTalkingPoints as string[]) ?? [],
+    thumbnail: (parsed.brief.thumbnail as ContentBrief["thumbnail"]) ?? String(parsed.brief.thumbnailDirection ?? ""),
+    dataEvidence: (parsed.brief.dataEvidence as ContentBrief["dataEvidence"]) ?? [],
   };
 
   return { brief, autopsy: parsed.autopsy };

@@ -19,12 +19,12 @@ function collectComments(
 
   for (const v of summary.topPerformers) {
     for (const text of v.topComments ?? []) {
-      out.push({ platform: "youtube", videoTitle: v.title, tier: "top", text: text.slice(0, 200) });
+      out.push({ platform: "youtube", videoTitle: v.title, tier: "top", text: text.slice(0, 150) });
     }
   }
   for (const v of summary.bottomPerformers) {
     for (const text of v.topComments ?? []) {
-      out.push({ platform: "youtube", videoTitle: v.title, tier: "bottom", text: text.slice(0, 200) });
+      out.push({ platform: "youtube", videoTitle: v.title, tier: "bottom", text: text.slice(0, 150) });
     }
   }
 
@@ -32,7 +32,7 @@ function collectComments(
     for (const v of tikTokSummary.topVideos) {
       const title = v.title || v.video_description.slice(0, 60) || "Untitled";
       for (const text of v.top_comments ?? []) {
-        out.push({ platform: "tiktok", videoTitle: title, tier: "top", text: text.slice(0, 200) });
+        out.push({ platform: "tiktok", videoTitle: title, tier: "top", text: text.slice(0, 150) });
       }
     }
   }
@@ -41,12 +41,12 @@ function collectComments(
     for (const p of igSummary.topPosts.slice(0, 5)) {
       const title = p.caption?.slice(0, 60) || p.media_type;
       for (const text of p.topComments ?? []) {
-        out.push({ platform: "instagram", videoTitle: title, tier: "top", text: text.slice(0, 200) });
+        out.push({ platform: "instagram", videoTitle: title, tier: "top", text: text.slice(0, 150) });
       }
     }
   }
 
-  return out.slice(0, 300);
+  return out.slice(0, 200);
 }
 
 function buildPrompt(comments: FlatComment[]): string {
@@ -135,34 +135,49 @@ export async function analyzeComments(
   igSummary: InstagramSummary | null
 ): Promise<CommentIntelligence> {
   const comments = collectComments(summary, tikTokSummary, igSummary);
+  const topCommenters = (summary.topCommenters ?? []).map((c) => ({ author: c.author, commentCount: c.count }));
 
   if (comments.length < 10) return emptyIntelligence(comments.length);
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: "You are an expert audience intelligence analyst. Return only valid JSON.",
-    messages: [{ role: "user", content: buildPrompt(comments) }],
-  });
+  let message: Awaited<ReturnType<typeof client.messages.create>>;
+  try {
+    message = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system: "You are an expert audience intelligence analyst. Return only valid JSON.",
+      messages: [{ role: "user", content: buildPrompt(comments) }],
+    });
+  } catch (err) {
+    console.error("[comment-intelligence] Anthropic API call failed:", err instanceof Error ? err.message : err);
+    return { ...emptyIntelligence(comments.length), topCommenters };
+  }
+
+  if (message.stop_reason === "max_tokens") {
+    console.error("[comment-intelligence] Response truncated (max_tokens). Comments analysed:", comments.length);
+    return { ...emptyIntelligence(comments.length), topCommenters };
+  }
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  const parsed = JSON.parse(text);
 
-  const topCommenters = (summary.topCommenters ?? []).map((c) => ({
-    author: c.author,
-    commentCount: c.count,
-  }));
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    console.error("[comment-intelligence] JSON parse failed:", err instanceof Error ? err.message : err);
+    console.error("[comment-intelligence] Raw response (first 500 chars):", text.slice(0, 500));
+    return { ...emptyIntelligence(comments.length), topCommenters };
+  }
 
   return {
     totalCommentsAnalysed: comments.length,
-    themes: parsed.themes ?? [],
-    videoIdeas: parsed.videoIdeas ?? [],
-    emotionalSignals: parsed.emotionalSignals ?? { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
-    sentimentBreakdown: parsed.sentimentBreakdown ?? { positive: 0, neutral: 0, negative: 0 },
-    audiencePersonas: parsed.audiencePersonas ?? [],
+    themes: parsed.themes as CommentIntelligence["themes"] ?? [],
+    videoIdeas: parsed.videoIdeas as CommentIntelligence["videoIdeas"] ?? [],
+    emotionalSignals: parsed.emotionalSignals as CommentIntelligence["emotionalSignals"] ?? { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
+    sentimentBreakdown: parsed.sentimentBreakdown as CommentIntelligence["sentimentBreakdown"] ?? { positive: 0, neutral: 0, negative: 0 },
+    audiencePersonas: parsed.audiencePersonas as CommentIntelligence["audiencePersonas"] ?? [],
     topCommenters,
-    keyInsight: parsed.keyInsight ?? "",
+    keyInsight: typeof parsed.keyInsight === "string" ? parsed.keyInsight : "",
     generatedAt: new Date().toISOString(),
   };
 }

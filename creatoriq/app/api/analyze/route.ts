@@ -213,11 +213,31 @@ export async function GET(request: NextRequest) {
         }
 
         emit({ event: "step_start", step: "comments_intel" });
-        const commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary);
+        let commentIntelligence;
+        try {
+          commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary);
+        } catch (err) {
+          console.error("[analyze] Comment intelligence failed (non-fatal):", err instanceof Error ? err.message : err);
+          commentIntelligence = {
+            totalCommentsAnalysed: 0, themes: [], videoIdeas: [],
+            emotionalSignals: { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
+            sentimentBreakdown: { positive: 0, neutral: 0, negative: 0 },
+            audiencePersonas: [], topCommenters: [],
+            keyInsight: "", generatedAt: new Date().toISOString(),
+          };
+        }
         emit({ event: "step_done", step: "comments_intel" });
 
         emit({ event: "step_start", step: "save" });
-        const { brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence);
+        let brief, autopsy;
+        try {
+          ({ brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Brief generation failed";
+          console.error("[analyze] generateContentBrief failed:", msg);
+          emit({ event: "error", message: msg });
+          return;
+        }
 
         await saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos, commentIntelligence });
 
@@ -229,7 +249,9 @@ export async function GET(request: NextRequest) {
         emit({ event: "step_done", step: "save" });
         emit({ event: "complete", analysisId: analysis.id });
       } catch (err) {
-        emit({ event: "error", message: err instanceof Error ? err.message : "Analysis failed" });
+        const msg = err instanceof Error ? err.message : "Analysis failed";
+        console.error("[analyze] Unhandled error:", msg);
+        emit({ event: "error", message: msg });
       } finally {
         controller.close();
       }
