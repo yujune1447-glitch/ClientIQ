@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import {
   Zap, TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
   MessageSquare, Lightbulb, Target, BarChart2, RefreshCw, Bell, Camera, Heart, Music2, Share2,
+  Clock, Database,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { MarkRead } from "@/app/components/MarkRead";
 import { GrowthSection } from "@/app/components/GrowthSection";
 import { CommentIntelligenceSection } from "@/app/components/CommentIntelligenceSection";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence } from "@/types";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence, BriefHook, BriefThumbnail } from "@/types";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -123,68 +124,7 @@ export default async function DashboardPage({
               This Week&apos;s Content Brief
             </h2>
           </div>
-          <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 space-y-6">
-            <div>
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Make this video</p>
-              <h3 className="text-2xl font-bold tracking-tight leading-tight">&ldquo;{brief.weeklyIdea}&rdquo;</h3>
-            </div>
-
-            <div className="h-px bg-[#1f1f22]" />
-
-            <div>
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Why this works</p>
-              <p className="text-sm text-zinc-300 leading-relaxed">{brief.rationale}</p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="bg-[#1a1014] border border-[#ff3040]/20 rounded-lg p-4">
-                <p className="text-xs text-[#ff3040] uppercase tracking-wider mb-2">Opening hook</p>
-                <p className="text-sm text-zinc-200 italic leading-relaxed">{brief.hook}</p>
-              </div>
-              <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
-                <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Format</p>
-                <p className="text-sm text-zinc-300 leading-relaxed">{brief.format}</p>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Key talking points</p>
-              <ul className="space-y-2">
-                {brief.keyTalkingPoints.map((point, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm text-zinc-300">
-                    <span className="text-[#ff3040] font-mono text-xs mt-0.5 shrink-0">{i + 1}.</span>
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Title options</p>
-              <div className="space-y-2">
-                {brief.titleOptions.map((title, i) => (
-                  <div
-                    key={i}
-                    className={`px-4 py-2.5 rounded-lg border text-sm ${
-                      i === 0
-                        ? "border-[#ff3040]/40 bg-[#1a1014] text-white font-medium"
-                        : "border-[#1f1f22] text-zinc-400"
-                    }`}
-                  >
-                    {i === 0 && (
-                      <span className="text-[10px] text-[#ff3040] font-semibold mr-2 uppercase">Recommended</span>
-                    )}
-                    {title}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Thumbnail direction</p>
-              <p className="text-sm text-zinc-300 leading-relaxed">{brief.thumbnailDirection}</p>
-            </div>
-          </div>
+          <BriefCard brief={brief} />
         </section>
 
         {/* Channel Autopsy */}
@@ -471,6 +411,175 @@ export default async function DashboardPage({
           ))}
         </div>
       </main>
+    </div>
+  );
+}
+
+function BriefCard({ brief }: { brief: ContentBrief }) {
+  const hook = brief.hook;
+  const hookIsObject = hook && typeof hook === "object";
+  const thumbnail = brief.thumbnail ?? brief.thumbnailDirection;
+  const thumbIsObject = thumbnail && typeof thumbnail === "object";
+
+  return (
+    <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6 space-y-6">
+
+      {/* Topic */}
+      <div>
+        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Make this video</p>
+        <h3 className="text-2xl font-bold tracking-tight leading-tight">&ldquo;{brief.weeklyIdea}&rdquo;</h3>
+      </div>
+
+      {/* Title options */}
+      <div>
+        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">3 title variations</p>
+        <div className="space-y-2">
+          {brief.titleOptions.map((title, i) => (
+            <div
+              key={i}
+              className={`px-4 py-2.5 rounded-lg border text-sm ${
+                i === 0
+                  ? "border-[#ff3040]/40 bg-[#1a1014] text-white font-medium"
+                  : "border-[#1f1f22] text-zinc-400"
+              }`}
+            >
+              {i === 0 && <span className="text-[10px] text-[#ff3040] font-semibold mr-2 uppercase">Recommended</span>}
+              {title}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="h-px bg-[#1f1f22]" />
+
+      {/* Hook structure */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-xs text-zinc-600 uppercase tracking-wider">Opening 30 seconds</p>
+        </div>
+        {hookIsObject ? (
+          <div className="space-y-3">
+            <div className="bg-[#1a1014] border border-[#ff3040]/20 rounded-lg p-4">
+              <p className="text-[10px] text-[#ff3040] uppercase tracking-wider mb-1.5 font-semibold">Opening line</p>
+              <p className="text-sm text-zinc-200 italic leading-relaxed">&ldquo;{(hook as BriefHook).openingLine}&rdquo;</p>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2">
+              {[
+                { label: "0–10s  Setup", body: (hook as BriefHook).setup, accent: "text-zinc-500" },
+                { label: "10–20s  Tension", body: (hook as BriefHook).tension, accent: "text-amber-600" },
+                { label: "20–30s  Payoff", body: (hook as BriefHook).payoff, accent: "text-emerald-600" },
+              ].map(({ label, body, accent }) => (
+                <div key={label} className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
+                  <p className={`text-[10px] uppercase tracking-wider mb-1.5 font-semibold ${accent}`}>{label}</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#1a1014] border border-[#ff3040]/20 rounded-lg p-4">
+            <p className="text-sm text-zinc-200 italic leading-relaxed">{String(hook)}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Length + Format */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {brief.recommendedLength && (
+          <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-3.5 h-3.5 text-zinc-600" />
+              <p className="text-xs text-zinc-600 uppercase tracking-wider">Recommended length</p>
+            </div>
+            <p className="text-sm text-zinc-300 leading-relaxed">{brief.recommendedLength}</p>
+          </div>
+        )}
+        <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
+          <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Format &amp; production</p>
+          <p className="text-sm text-zinc-300 leading-relaxed">{brief.format}</p>
+        </div>
+      </div>
+
+      {/* Talking points */}
+      <div>
+        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Key talking points</p>
+        <ul className="space-y-2">
+          {brief.keyTalkingPoints.map((point, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-zinc-300">
+              <span className="text-[#ff3040] font-mono text-xs mt-0.5 shrink-0">{i + 1}.</span>
+              {point}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Thumbnail */}
+      <div>
+        <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Thumbnail direction</p>
+        {thumbIsObject ? (
+          <div className="space-y-2">
+            <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4 mb-3">
+              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-1.5">Concept</p>
+              <p className="text-sm text-zinc-300 leading-relaxed">{(thumbnail as BriefThumbnail).concept}</p>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2">
+              {[
+                { label: "Colours", body: (thumbnail as BriefThumbnail).colours },
+                { label: "Composition", body: (thumbnail as BriefThumbnail).composition },
+                { label: "Text overlay", body: (thumbnail as BriefThumbnail).textOverlay },
+              ].map(({ label, body }) => (
+                <div key={label} className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">{label}</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{body}</p>
+                </div>
+              ))}
+            </div>
+            {(thumbnail as BriefThumbnail).faceExpression && (
+              <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Face &amp; expression</p>
+                <p className="text-xs text-zinc-400 leading-relaxed">{(thumbnail as BriefThumbnail).faceExpression}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-[#0f1114] border border-[#1f1f22] rounded-lg p-4">
+            <p className="text-sm text-zinc-300 leading-relaxed">{String(thumbnail)}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Data evidence */}
+      {brief.dataEvidence && brief.dataEvidence.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Database className="w-3.5 h-3.5 text-zinc-600" />
+            <p className="text-xs text-zinc-600 uppercase tracking-wider">Why this will work — the data</p>
+          </div>
+          <div className="space-y-2">
+            {brief.dataEvidence.map((point, i) => (
+              <div key={i} className="flex gap-3 bg-[#0f1114] border border-[#1f1f22] rounded-lg p-3">
+                <div className="shrink-0 mt-0.5">
+                  <div className="w-5 h-5 rounded-full bg-[#1f1f22] flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-zinc-500">{i + 1}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-zinc-300 mb-1">{point.claim}</p>
+                  <p className="text-xs text-zinc-600 leading-relaxed">{point.evidence}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Rationale fallback for old data */}
+      {brief.rationale && (!brief.dataEvidence || brief.dataEvidence.length === 0) && (
+        <div>
+          <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Why this works</p>
+          <p className="text-sm text-zinc-300 leading-relaxed">{brief.rationale}</p>
+        </div>
+      )}
     </div>
   );
 }

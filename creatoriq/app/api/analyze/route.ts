@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
         emit({ event: "step_start", step: "comments_intel" });
         const [{ brief, autopsy }, commentIntelligence] = await Promise.all([
           generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary),
-          analyzeComments(summary, tikTokSummary),
+          analyzeComments(summary, tikTokSummary, igSummary),
         ]);
         emit({ event: "step_done", step: "comments_intel" });
 

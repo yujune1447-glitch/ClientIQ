@@ -1,10 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChannelSummary, TikTokSummary, CommentIntelligence } from "@/types";
+import type { ChannelSummary, TikTokSummary, InstagramSummary, CommentIntelligence } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 interface FlatComment {
-  platform: "youtube" | "tiktok";
+  platform: "youtube" | "tiktok" | "instagram";
   videoTitle: string;
   tier: "top" | "bottom";
   text: string;
@@ -12,7 +12,8 @@ interface FlatComment {
 
 function collectComments(
   summary: ChannelSummary,
-  tikTokSummary: TikTokSummary | null
+  tikTokSummary: TikTokSummary | null,
+  igSummary: InstagramSummary | null
 ): FlatComment[] {
   const out: FlatComment[] = [];
 
@@ -32,6 +33,15 @@ function collectComments(
       const title = v.title || v.video_description.slice(0, 60) || "Untitled";
       for (const text of v.top_comments ?? []) {
         out.push({ platform: "tiktok", videoTitle: title, tier: "top", text: text.slice(0, 200) });
+      }
+    }
+  }
+
+  if (igSummary) {
+    for (const p of igSummary.topPosts.slice(0, 5)) {
+      const title = p.caption?.slice(0, 60) || p.media_type;
+      for (const text of p.topComments ?? []) {
+        out.push({ platform: "instagram", videoTitle: title, tier: "top", text: text.slice(0, 200) });
       }
     }
   }
@@ -113,6 +123,7 @@ function emptyIntelligence(count: number): CommentIntelligence {
     emotionalSignals: { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
     sentimentBreakdown: { positive: 0, neutral: 0, negative: 0 },
     audiencePersonas: [],
+    topCommenters: [],
     keyInsight: "Not enough comments collected to generate audience intelligence.",
     generatedAt: new Date().toISOString(),
   };
@@ -120,9 +131,10 @@ function emptyIntelligence(count: number): CommentIntelligence {
 
 export async function analyzeComments(
   summary: ChannelSummary,
-  tikTokSummary: TikTokSummary | null
+  tikTokSummary: TikTokSummary | null,
+  igSummary: InstagramSummary | null
 ): Promise<CommentIntelligence> {
-  const comments = collectComments(summary, tikTokSummary);
+  const comments = collectComments(summary, tikTokSummary, igSummary);
 
   if (comments.length < 10) return emptyIntelligence(comments.length);
 
@@ -137,6 +149,11 @@ export async function analyzeComments(
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   const parsed = JSON.parse(text);
 
+  const topCommenters = (summary.topCommenters ?? []).map((c) => ({
+    author: c.author,
+    commentCount: c.count,
+  }));
+
   return {
     totalCommentsAnalysed: comments.length,
     themes: parsed.themes ?? [],
@@ -144,6 +161,7 @@ export async function analyzeComments(
     emotionalSignals: parsed.emotionalSignals ?? { excited: 0, grateful: 0, curious: 0, confused: 0, critical: 0, requesting: 0 },
     sentimentBreakdown: parsed.sentimentBreakdown ?? { positive: 0, neutral: 0, negative: 0 },
     audiencePersonas: parsed.audiencePersonas ?? [],
+    topCommenters,
     keyInsight: parsed.keyInsight ?? "",
     generatedAt: new Date().toISOString(),
   };

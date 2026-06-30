@@ -126,8 +126,8 @@ export async function fetchCommentsParallel(
   videoIds: string[],
   accessToken: string,
   onProgress?: (done: number, total: number) => void
-): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>();
+): Promise<Map<string, { text: string; author: string }[]>> {
+  const map = new Map<string, { text: string; author: string }[]>();
   const BATCH = 5;
 
   for (let i = 0; i < videoIds.length; i += BATCH) {
@@ -140,7 +140,7 @@ export async function fetchCommentsParallel(
   return map;
 }
 
-async function getTopComments(videoId: string, accessToken: string): Promise<string[]> {
+async function getTopComments(videoId: string, accessToken: string): Promise<{ text: string; author: string }[]> {
   try {
     const params = new URLSearchParams({ videoId, part: "snippet", maxResults: "20", order: "relevance" });
     const res = await fetch(`${YT}/commentThreads?${params}`, {
@@ -149,8 +149,10 @@ async function getTopComments(videoId: string, accessToken: string): Promise<str
     if (!res.ok) return [];
     const data = await res.json();
     return (data.items ?? []).map(
-      (item: { snippet: { topLevelComment: { snippet: { textDisplay: string } } } }) =>
-        item.snippet.topLevelComment.snippet.textDisplay
+      (item: { snippet: { topLevelComment: { snippet: { textDisplay: string; authorDisplayName: string } } } }) => ({
+        text: item.snippet.topLevelComment.snippet.textDisplay,
+        author: item.snippet.topLevelComment.snippet.authorDisplayName ?? "Unknown",
+      })
     );
   } catch {
     return [];

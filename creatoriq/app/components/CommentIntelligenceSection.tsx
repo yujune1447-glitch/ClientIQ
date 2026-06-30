@@ -1,4 +1,4 @@
-import { Brain, Lightbulb, MessageSquare, Users, Sparkles, TrendingUp } from "lucide-react";
+import { Brain, Lightbulb, MessageSquare, Users, Sparkles, TrendingUp, Star } from "lucide-react";
 import type { CommentIntelligence } from "@/types";
 
 function fmt(n: number) {
@@ -169,6 +169,27 @@ export function CommentIntelligenceSection({ intel }: { intel: CommentIntelligen
                     &ldquo;{idea.sourceComment.slice(0, 140)}{idea.sourceComment.length > 140 ? "…" : ""}&rdquo;
                   </p>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top commenters */}
+      {intel.topCommenters.length > 0 && (
+        <div className="bg-[#111113] border border-[#27272a] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Star className="w-3.5 h-3.5 text-zinc-600" />
+            <p className="text-xs text-zinc-600 uppercase tracking-wider">Most engaged commenters</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {intel.topCommenters.slice(0, 8).map((c, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 bg-[#0f0f11] rounded-lg border border-[#1f1f22]">
+                <div className="w-6 h-6 rounded-full bg-[#1f1f22] flex items-center justify-center shrink-0">
+                  <span className="text-[10px] font-bold text-zinc-500">{i + 1}</span>
+                </div>
+                <span className="text-sm text-zinc-300 flex-1 truncate">{c.author}</span>
+                <span className="text-xs text-zinc-600 shrink-0">{c.commentCount} comment{c.commentCount !== 1 ? "s" : ""}</span>
               </div>
             ))}
           </div>

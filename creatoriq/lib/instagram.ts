@@ -66,6 +66,20 @@ export async function getInstagramMedia(igUserId: string, pageToken: string): Pr
   return posts;
 }
 
+async function getPostComments(mediaId: string, pageToken: string): Promise<string[]> {
+  try {
+    const params = new URLSearchParams({
+      fields: "text,timestamp",
+      limit: "5",
+      access_token: pageToken,
+    });
+    const data = await fbFetch(`${FB}/${mediaId}/comments?${params}`);
+    return (data.data ?? []).map((c: { text: string }) => c.text).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 async function getPostInsights(
   mediaId: string,
   mediaType: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM",
@@ -134,9 +148,14 @@ export async function fetchInstagramData(
   const avgEngagement = enriched.reduce((s, p) => s + p.engagement, 0) / n;
   const engagementRate = followerCount > 0 ? ((avgLikes + avgComments) / followerCount) * 100 : 0;
 
-  const topPosts = [...enriched]
-    .sort((a, b) => b.engagement - a.engagement || b.like_count - a.like_count)
-    .slice(0, 10);
+  const sortedByEngagement = [...enriched].sort((a, b) => b.engagement - a.engagement || b.like_count - a.like_count);
+  const top5 = sortedByEngagement.slice(0, 5);
+  const commentsResults = await Promise.all(top5.map((p) => getPostComments(p.id, pageToken)));
+  const top5WithComments = top5.map((p, i) => ({ ...p, topComments: commentsResults[i] }));
+  const topPosts = [
+    ...top5WithComments,
+    ...sortedByEngagement.slice(5, 10),
+  ];
 
   return {
     username,

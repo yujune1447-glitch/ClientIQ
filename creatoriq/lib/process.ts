@@ -79,20 +79,39 @@ export function scoreVideos(
 
 export function buildSummary(
   result: ScoredResult,
-  commentsMap: Map<string, string[]>,
+  commentsMap: Map<string, { text: string; author: string }[]>,
   channel: YouTubeChannel
 ): ChannelSummary {
   const { scored, averages, outliers, dateRange } = result;
 
-  const attach = (v: VideoWithScore) => ({ ...v, topComments: commentsMap.get(v.id) ?? [] });
+  const authorCounts = new Map<string, number>();
+  const attach = (v: VideoWithScore) => {
+    const comments = commentsMap.get(v.id) ?? [];
+    for (const c of comments) {
+      if (c.author && c.author !== "Unknown") {
+        authorCounts.set(c.author, (authorCounts.get(c.author) ?? 0) + 1);
+      }
+    }
+    return { ...v, topComments: comments.map((c) => c.text), topCommentAuthors: comments.map((c) => c.author) };
+  };
+
+  const topPerformers = scored.slice(0, 10).map(attach);
+  const bottomPerformers = scored.slice(-10).reverse().map(attach);
+
+  const topCommenters = Array.from(authorCounts.entries())
+    .filter(([, count]) => count >= 2)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([author, count]) => ({ author, count }));
 
   return {
     channel,
     averages,
-    topPerformers: scored.slice(0, 10).map(attach),
-    bottomPerformers: scored.slice(-10).reverse().map(attach),
+    topPerformers,
+    bottomPerformers,
     outliers,
     totalVideosAnalysed: scored.length,
     dateRange,
+    topCommenters: topCommenters.length > 0 ? topCommenters : undefined,
   };
 }

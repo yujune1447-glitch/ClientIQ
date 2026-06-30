@@ -117,31 +117,52 @@ ${topVideos.map((v, i) => {
   }).join("\n\n")}`;
 }
 
-const SYSTEM = `You are an expert YouTube content strategist. You will receive a creator's channel intelligence report and optionally niche intelligence data, Instagram performance data, and TikTok performance data.
+const SYSTEM = `You are an expert YouTube content strategist. You receive a creator's full channel intelligence report plus optional niche, Instagram, and TikTok data.
 
-Use ALL available data sources to generate recommendations. The niche data tells you what's working broadly in the space; the channel data tells you what works specifically for this creator and their audience; the Instagram data reveals cross-platform audience patterns and what visual/short-form content resonates; the TikTok data shows short-form video performance, trending formats, and what hooks drive views and engagement. Find the intersection — where the creator's strengths meet proven niche patterns, informed by multi-platform signals.
+Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "your top 3 videos all had CTR above 8%", "niche median retention is 42%", "your #1 video got 3.2× your average views"). Generic advice is not acceptable.
 
-Return a single JSON object with this exact structure — no markdown, no explanation, only valid JSON:
+Return ONLY a single valid JSON object — no markdown, no explanation:
 
 {
   "brief": {
-    "weeklyIdea": "specific video concept grounded in both channel performance and niche intelligence",
-    "rationale": "data-backed explanation referencing specific top performers, niche patterns, and the gap or opportunity identified",
-    "hook": "exact opening line or scene for the video",
-    "format": "recommended format, length, and production approach — reference both what this audience retains AND what length works in the niche",
-    "estimatedPerformance": "honest prediction relative to channel average, with reference to niche benchmarks",
-    "keyTalkingPoints": ["point 1", "point 2", "point 3", "point 4"],
-    "thumbnailDirection": "specific creative direction referencing CTR patterns in the creator's data and title patterns from the niche",
-    "titleOptions": ["title 1", "title 2", "title 3"]
+    "weeklyIdea": "Specific, concrete video concept (not vague) grounded in the intersection of what this channel's data shows works and what the niche data confirms is in demand",
+    "titleOptions": [
+      "Title option 1 — use the highest-CTR pattern from this creator's top performers",
+      "Title option 2 — use the top-performing title format from the niche data",
+      "Title option 3 — curiosity-gap or contrarian angle grounded in audience comment signals"
+    ],
+    "hook": {
+      "openingLine": "The exact first sentence or action — make it punchy and specific, not generic",
+      "setup": "Seconds 0–10: what you establish. The concrete premise or claim that makes the viewer want to stay.",
+      "tension": "Seconds 10–20: the conflict, problem, or curiosity gap you introduce. Reference something the audience cares about based on comment data or niche topic clusters.",
+      "payoff": "Seconds 20–30: the explicit payoff promise. What exact value will the viewer have if they watch to the end?"
+    },
+    "recommendedLength": "Specific duration (e.g. '8–12 minutes') with the data reason (e.g. 'your top 5 videos avg 9.4 min; niche top-quartile peaks at 10–14 min')",
+    "format": "Production approach: structure, pacing, camera style, b-roll needs — grounded in retention data",
+    "estimatedPerformance": "Honest projection vs channel average, citing the closest comparable video from their own history",
+    "keyTalkingPoints": ["point 1 with why this angle resonates based on data", "point 2", "point 3", "point 4"],
+    "thumbnail": {
+      "concept": "Overall visual concept in one sentence — what the viewer sees at a glance",
+      "colours": "Specific colour palette (e.g. 'high-contrast red and white on dark background — your top CTR videos all use this')",
+      "composition": "Layout and framing notes (e.g. 'face takes left 60%, bold 2-word text right — mirrors your #1 CTR video')",
+      "textOverlay": "Exact text to use on the thumbnail (2–5 words max)",
+      "faceExpression": "If relevant: expression/pose direction tied to the emotional hook"
+    },
+    "dataEvidence": [
+      { "claim": "Why this topic", "evidence": "Cite the specific metric, video title, or niche stat that justifies this — e.g. 'Your 3 highest-performing videos all covered X, averaging 2.8× channel average views'" },
+      { "claim": "Why this length", "evidence": "Specific data — e.g. 'Your retention drops below 40% after 14 min; niche top quartile is 10–14 min'" },
+      { "claim": "Why this thumbnail approach", "evidence": "Specific data — e.g. 'Your top-CTR video (8.4%) used this exact red/white contrast pattern'" },
+      { "claim": "Why this hook structure", "evidence": "Specific data — e.g. 'Audience comments on your top videos frequently ask about X — this hook addresses that directly'" }
+    ]
   },
   "autopsy": {
-    "overallTrend": "one honest sentence on the channel's trajectory based on the data",
-    "whatIsWorking": ["specific data-backed finding", "finding 2", "finding 3", "finding 4"],
-    "whatIsNotWorking": ["specific data-backed finding", "finding 2", "finding 3"],
-    "audienceInsights": "who this audience is and what they demonstrably respond to, inferred from comments and performance patterns",
-    "topPerformerPattern": "the precise pattern shared by the creator's top videos — format, topic, tone, length",
-    "bottomPerformerPattern": "the precise pattern shared by the creator's bottom videos",
-    "actionableAdvice": ["specific action 1", "action 2", "action 3", "action 4"]
+    "overallTrend": "One honest sentence on trajectory based on the data — cite actual numbers",
+    "whatIsWorking": ["Specific data-backed finding with numbers", "finding 2", "finding 3", "finding 4"],
+    "whatIsNotWorking": ["Specific data-backed finding with numbers", "finding 2", "finding 3"],
+    "audienceInsights": "Who this audience is and what they demonstrably respond to — inferred from comments and performance patterns, cite specifics",
+    "topPerformerPattern": "The precise shared pattern across this creator's top videos — format, topic, tone, length — with numbers",
+    "bottomPerformerPattern": "The precise shared pattern across bottom videos — with numbers",
+    "actionableAdvice": ["Specific action with clear rationale", "action 2", "action 3", "action 4"]
   }
 }`;
 
@@ -168,5 +189,18 @@ export async function generateContentBrief(
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   const parsed = JSON.parse(text);
-  return { brief: parsed.brief, autopsy: parsed.autopsy };
+
+  const brief: ContentBrief = {
+    weeklyIdea: parsed.brief.weeklyIdea ?? "",
+    titleOptions: (parsed.brief.titleOptions ?? []).slice(0, 3),
+    hook: parsed.brief.hook ?? "",
+    recommendedLength: parsed.brief.recommendedLength ?? "",
+    format: parsed.brief.format ?? "",
+    estimatedPerformance: parsed.brief.estimatedPerformance ?? "",
+    keyTalkingPoints: parsed.brief.keyTalkingPoints ?? [],
+    thumbnail: parsed.brief.thumbnail ?? parsed.brief.thumbnailDirection ?? "",
+    dataEvidence: parsed.brief.dataEvidence ?? [],
+  };
+
+  return { brief, autopsy: parsed.autopsy };
 }

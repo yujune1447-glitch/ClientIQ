@@ -27,6 +27,7 @@ export interface VideoWithScore extends YouTubeVideo {
   performanceScore: number;
   viewsVsAverage: number;
   topComments?: string[];
+  topCommentAuthors?: string[];
 }
 
 export interface ChannelSummary {
@@ -43,6 +44,7 @@ export interface ChannelSummary {
   outliers: VideoWithScore[];
   totalVideosAnalysed: number;
   dateRange: { from: string; to: string };
+  topCommenters?: { author: string; count: number }[];
 }
 
 export interface RawVideo {
@@ -73,15 +75,38 @@ export interface VideoAnalytics {
   ctr: number;
 }
 
+export interface BriefHook {
+  openingLine: string;
+  setup: string;
+  tension: string;
+  payoff: string;
+}
+
+export interface BriefThumbnail {
+  concept: string;
+  colours: string;
+  composition: string;
+  textOverlay: string;
+  faceExpression?: string;
+}
+
+export interface BriefDataPoint {
+  claim: string;
+  evidence: string;
+}
+
 export interface ContentBrief {
   weeklyIdea: string;
-  rationale: string;
-  hook: string;
+  titleOptions: string[];
+  hook: BriefHook | string;
+  recommendedLength: string;
   format: string;
   estimatedPerformance: string;
   keyTalkingPoints: string[];
-  thumbnailDirection: string;
-  titleOptions: string[];
+  thumbnail: BriefThumbnail | string;
+  thumbnailDirection?: string;
+  dataEvidence: BriefDataPoint[];
+  rationale?: string;
 }
 
 export interface ContentAutopsy {
@@ -149,6 +174,7 @@ export interface InstagramPost {
   engagement?: number;
   saved?: number;
   video_views?: number;
+  topComments?: string[];
 }
 
 export interface InstagramSummary {
@@ -239,6 +265,7 @@ export interface CommentIntelligence {
     negative: number;
   };
   audiencePersonas: AudiencePersona[];
+  topCommenters: { author: string; commentCount: number }[];
   keyInsight: string;
   generatedAt: string;
 }
