@@ -567,7 +567,7 @@ async function callClaude(prompt: string) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4096, system, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 8000, system, messages: [{ role: "user", content: prompt }] }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Anthropic API error");

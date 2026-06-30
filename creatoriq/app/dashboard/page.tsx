@@ -42,7 +42,7 @@ export default async function DashboardPage({
 
   const supabase = createAdminClient();
   const [{ data: analysis }, { data: snapshots }] = await Promise.all([
-    supabase.from("analyses").select("*").eq("id", id).eq("user_id", userId).single(),
+    supabase.from("analyses").select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at").eq("id", id).eq("user_id", userId).single(),
     supabase.from("channel_snapshots").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
   ]);
 

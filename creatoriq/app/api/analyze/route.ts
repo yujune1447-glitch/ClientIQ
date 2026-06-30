@@ -13,7 +13,7 @@ import { generateContentBrief } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
 import { saveSnapshot } from "@/lib/snapshot";
-import { fetchInstagramData } from "@/lib/instagram";
+import { fetchInstagramData, refreshPageToken } from "@/lib/instagram";
 import { fetchTikTokData, refreshTikTokToken } from "@/lib/tiktok";
 import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary } from "@/types";
 
@@ -145,9 +145,20 @@ export async function GET(request: NextRequest) {
         if (igConn) {
           emit({ event: "step_start", step: "instagram" });
           try {
+            let igPageToken: string = igConn.page_access_token;
+            if (igConn.token_expires_at && new Date(igConn.token_expires_at) <= new Date()) {
+              const refreshed = await refreshPageToken(igConn.user_access_token);
+              if (refreshed) {
+                igPageToken = refreshed;
+                await supabase.from("instagram_connections").update({
+                  page_access_token: refreshed,
+                  token_expires_at: new Date(Date.now() + 5184000 * 1000).toISOString(),
+                }).eq("id", igConn.id);
+              }
+            }
             igSummary = await fetchInstagramData(
               igConn.ig_user_id,
-              igConn.page_access_token,
+              igPageToken,
               igConn.follower_count ?? 0,
               igConn.username ?? "",
               igConn.media_count ?? 0,
