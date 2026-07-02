@@ -248,7 +248,7 @@ export default function WorkspaceShell({
     }
   };
 
-  const openAccountWithNewChat = (accountType: AccountType) => {
+  const openAccountWithNewChat = (accountType: AccountType, forceNew = false) => {
     setMainView(accountType);
 
     const accountName =
@@ -259,6 +259,24 @@ export default function WorkspaceShell({
           ? `@${igConn.username}`
           : "Instagram"
         : (ttConn?.displayName ?? "TikTok");
+
+    if (!forceNew) {
+      const today = new Date().toDateString();
+      const existingToday = conversations.find(
+        (c) => c.accountType === accountType && new Date(c.createdAt).toDateString() === today
+      );
+      if (existingToday) {
+        setActiveConvId(existingToday.id);
+        setAiPanelOpen(true);
+        if (existingToday.messages.length > 0) {
+          setMessages(existingToday.messages);
+        } else {
+          setMessages([]);
+          initConversation(existingToday.id);
+        }
+        return;
+      }
+    }
 
     const now = new Date();
     const newConv: StoredConversation = {
@@ -321,7 +339,7 @@ export default function WorkspaceShell({
   const startNewChatForCurrentView = () => {
     const accountType = mainView !== "dashboard" ? (mainView as AccountType) : null;
     if (accountType) {
-      openAccountWithNewChat(accountType);
+      openAccountWithNewChat(accountType, true);
     }
   };
 
