@@ -84,6 +84,11 @@ export function buildSummary(
 ): ChannelSummary {
   const { scored, averages, outliers, dateRange } = result;
 
+  const withComments = (v: VideoWithScore): VideoWithScore => {
+    const comments = commentsMap.get(v.id) ?? [];
+    return { ...v, topComments: comments.map((c) => c.text), topCommentAuthors: comments.map((c) => c.author) };
+  };
+
   const authorCounts = new Map<string, number>();
   const attach = (v: VideoWithScore) => {
     const comments = commentsMap.get(v.id) ?? [];
@@ -98,6 +103,11 @@ export function buildSummary(
   const topPerformers = scored.slice(0, 10).map(attach);
   const bottomPerformers = scored.slice(-10).reverse().map(attach);
 
+  const recentVideos = [...scored]
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+    .slice(0, 60)
+    .map(withComments);
+
   const topCommenters = Array.from(authorCounts.entries())
     .filter(([, count]) => count >= 2)
     .sort(([, a], [, b]) => b - a)
@@ -110,6 +120,7 @@ export function buildSummary(
     topPerformers,
     bottomPerformers,
     outliers,
+    recentVideos,
     totalVideosAnalysed: scored.length,
     dateRange,
     topCommenters: topCommenters.length > 0 ? topCommenters : undefined,

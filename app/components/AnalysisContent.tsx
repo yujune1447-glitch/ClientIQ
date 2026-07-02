@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
   MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
-  Loader2, Send, BookmarkPlus, Sparkles, Clock, Type, Layers, Zap,
+  Loader2, Send, BookmarkPlus, Sparkles, Clock, Type, Zap,
+  User, ListOrdered,
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
@@ -117,42 +118,74 @@ function fmtMins(seconds: number): string {
   return `${Math.round(seconds / 60)}m`;
 }
 
-interface TitleFormula { formula: string; count: number; examples: string[] }
-interface TitleAnalysis { formulas: TitleFormula[]; styleNotes: string[] }
+interface TitleCategory {
+  key: string;
+  name: string;
+  description: string;
+  formula: string;
+  color: string;
+  Icon: React.ElementType;
+  examples: string[];
+  bottomExamples: string[];
+}
 
-function extractTitleFormulas(titles: string[]): TitleAnalysis {
-  const defs: Array<{ formula: string; test: (t: string) => boolean }> = [
-    { formula: "How I [verb]ed [X] in [timeframe]", test: (t) => /^how i\b/i.test(t) },
-    { formula: "[N] [things/ways/tips] to/that [X]", test: (t) => /^\d+\s+(things?|ways?|tips?|reasons?|mistakes?|habits?|steps?|secrets?)\b/i.test(t) },
-    { formula: "I [verb]ed [X] (for [period] / so you don't have to)", test: (t) => /^i\s+(tried|quit|spent|only|made|built|tested|stopped|deleted|ate|ran|lived|went|used|bought|sold|started|switched)\b/i.test(t) },
-    { formula: "Why/What [X] [verb]s", test: (t) => /^(why|what)\b/i.test(t) },
-    { formula: "[You] [verb/are] [X]", test: (t) => /^you\b/i.test(t) },
-    { formula: "[Direct question]?", test: (t) => t.trim().endsWith("?") },
-    { formula: "The [noun] that [verb]ed my [X]", test: (t) => /^the\b/i.test(t) },
-    { formula: "[Doing X] for [N] days/weeks", test: (t) => /for \d+\s*(day|week|month|year)/i.test(t) && !/^(how i|why i|i )\b/i.test(t) },
+function extractTitleCategories(topTitles: string[], bottomTitles: string[]): TitleCategory[] {
+  const defs: Array<Omit<TitleCategory, "examples" | "bottomExamples"> & { test: (t: string) => boolean }> = [
+    {
+      key: "reassurance",
+      name: "Reassurance / Permission-giving",
+      description: "Converts viewer anxiety into relief by granting explicit permission to feel or stop",
+      formula: "[You don't have to / It's okay to] [do/feel X]",
+      color: "rose",
+      Icon: Heart,
+      test: (t) => /\b(you don'?t have to|it'?s (ok|okay)\b|you'?re allowed|give yourself|be gentle|you are enough|take a (deep )?breath|no pressure|let yourself|not your fault|you don'?t need to|stop (feeling|worrying|pushing)|allow yourself)\b/i.test(t),
+    },
+    {
+      key: "timing",
+      name: "Timing / Destiny framing",
+      description: "Implies the viewer arrived at exactly the right moment — transforms a click into a meaningful encounter",
+      formula: "You'll [see/find] this when [the time is right / you need it]",
+      color: "amber",
+      Icon: Sparkles,
+      test: (t) => /\b(when the time|when you need|meant to (find|see|hear|watch)|right time|divine timing|trust the process|found this for a reason|not a coincidence|exactly where you|where you'?re? meant)\b/i.test(t),
+    },
+    {
+      key: "personal-journey",
+      name: "Personal journey / First-person",
+      description: "Positions the creator as a fellow traveller, not an expert — makes the story feel relatable and lived-in",
+      formula: "How I [verb]ed [X] / I [tried/quit/left] [X]",
+      color: "blue",
+      Icon: User,
+      test: (t) => /^(how i|why i|what i|i tried|i quit|i spent|i made|i built|i only|i stopped|i started|i learned|i realized|i chose|i left|i moved|i went|i found|i lost|i used|i switched)\b/i.test(t),
+    },
+    {
+      key: "question",
+      name: "Direct question / Curiosity gap",
+      description: "Opens a loop the brain can't close — viewer clicks to resolve the tension the title creates",
+      formula: "[Are you / Do you / Why do / What if] [X]?",
+      color: "violet",
+      Icon: MessageSquare,
+      test: (t) => /\?\s*$/.test(t.trim()),
+    },
+    {
+      key: "list",
+      name: "List / Countdown structure",
+      description: "Signals a defined, scannable payoff — viewers know exactly what they're getting before they click",
+      formula: "[N] [things/signs/reasons/ways] [you/to X]",
+      color: "teal",
+      Icon: ListOrdered,
+      test: (t) => /^\d+\s+\w/i.test(t),
+    },
   ];
-  const formulas = defs
-    .map(({ formula, test }) => {
-      const examples = titles.filter(test);
-      return { formula, count: examples.length, examples: examples.slice(0, 4) };
-    })
-    .filter((f) => f.count >= 2)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
 
-  const styleNotes: string[] = [];
-  const n = titles.length;
-  if (n > 0) {
-    const lowercaseCount = titles.filter((t) => t === t.toLowerCase()).length;
-    const colonCount = titles.filter((t) => t.includes(":")).length;
-    const parensCount = titles.filter((t) => /\(.*\)/.test(t)).length;
-    const noPunctCount = titles.filter((t) => !/[.,!?;:]/.test(t)).length;
-    if (lowercaseCount >= 2) styleNotes.push(`${lowercaseCount}/${n} titles use fully lowercase styling`);
-    if (colonCount >= 2) styleNotes.push(`${colonCount}/${n} use a colon to set up a payoff`);
-    if (parensCount >= 2) styleNotes.push(`${parensCount}/${n} add a parenthetical aside`);
-    if (noPunctCount >= Math.ceil(n * 0.6)) styleNotes.push("Minimal punctuation — clean, scannable style");
-  }
-  return { formulas, styleNotes };
+  return defs
+    .map(({ test, ...rest }) => ({
+      ...rest,
+      examples: topTitles.filter(test).slice(0, 8),
+      bottomExamples: bottomTitles.filter(test).slice(0, 4),
+    }))
+    .filter((c) => c.examples.length >= 2)
+    .sort((a, b) => b.examples.length - a.examples.length);
 }
 
 function extractHookClusters(titles: string[]): Array<{ label: string; examples: string[] }> {
@@ -164,9 +197,43 @@ function extractHookClusters(titles: string[]): Array<{ label: string; examples:
     { label: "Lowercase / casual tone", test: (t) => t === t.toLowerCase() || /^[a-z]/.test(t) },
   ];
   return defs
-    .map(({ label, test }) => ({ label, examples: titles.filter(test).slice(0, 2) }))
+    .map(({ label, test }) => ({ label, examples: titles.filter(test).slice(0, 5) }))
     .filter((c) => c.examples.length >= 2)
-    .slice(0, 3);
+    .slice(0, 5);
+}
+
+function buildTitlesInsight(categories: TitleCategory[], total: number): string {
+  if (!categories.length || total === 0) return "";
+  const top = categories[0];
+  const second = categories[1];
+  const pct = Math.round((top.examples.length / total) * 100);
+  let s = `${top.examples.length} of your ${total} top performers use ${top.name.toLowerCase()} titles — roughly ${pct}% of your strongest content leans on this pattern.`;
+  if (second) {
+    s += ` The ${second.name.toLowerCase()} format appears ${second.examples.length} times as well, suggesting your audience also responds to ${second.description.toLowerCase()}.`;
+  }
+  s += " These patterns are consistent enough to treat as repeatable templates rather than reinventing your approach each time.";
+  return s;
+}
+
+function buildLengthInsight(avgTopSec: number, topLengthRange: string, avgBotSec: number, botLengthRange: string, topCount: number, botCount: number): string {
+  if (!topCount) return "";
+  let s = `Your top performers run ${topLengthRange}, averaging ${fmtMins(avgTopSec)} across ${topCount} videos.`;
+  if (botCount > 0 && avgBotSec > 0) {
+    const diff = Math.round(avgBotSec / 60) - Math.round(avgTopSec / 60);
+    const absDiff = Math.abs(diff);
+    if (absDiff >= 2) {
+      const direction = diff > 0 ? "longer" : "shorter";
+      s += ` Your lowest performers average ${fmtMins(avgBotSec)} (${botLengthRange}) — ${absDiff} minute${absDiff !== 1 ? "s" : ""} ${direction}.`;
+      s += diff > 0
+        ? " Your audience tends to disengage before the longer format pays off — tighter is better."
+        : " Your audience rewards depth; longer content is consistently outperforming, so there's room to go further.";
+    } else {
+      s += ` Bottom performers run a similar length (${botLengthRange}), so duration alone isn't the differentiator — look to topic and hook quality instead.`;
+    }
+  } else {
+    s += ` Keep new videos in this window — it's where your audience retention is strongest.`;
+  }
+  return s;
 }
 
 export function AnalysisContent({
@@ -336,7 +403,7 @@ const YT_TABS: { key: YtTab; label: string }[] = [
 ];
 
 function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshots: ChannelSnapshot[] }) {
-  const { summary, autopsy, commentIntel, isUnread, isScheduled, id, createdAt } = analysis;
+  const { summary, autopsy, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
 
   const [tab, setTab] = useState<YtTab>("live");
@@ -399,17 +466,11 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
     }
   };
 
-  // Deduplicated video pool from all stored performer lists
-  const allVideos: VideoWithScore[] = (() => {
-    const seen = new Set<string>();
-    const out: VideoWithScore[] = [];
-    for (const v of [...topPerformers, ...bottomPerformers, ...(summary.outliers ?? [])]) {
-      if (!seen.has(v.id)) { seen.add(v.id); out.push(v); }
-    }
-    return out;
-  })();
+  // Recent videos pool — used for period-filtered views, watch time, top content, comments.
+  // topPerformers/bottomPerformers are kept separate (score-based, all-time) for Success Patterns.
+  const recentPool: VideoWithScore[] = summary.recentVideos ?? [];
 
-  const periodVideos = filterByPeriod(allVideos, period, createdAt);
+  const periodVideos = filterByPeriod(recentPool, period, createdAt);
   const sortedByViews = [...periodVideos].sort((a, b) => b.viewCount - a.viewCount);
 
   const totalPeriodViews = periodVideos.reduce((s, v) => s + v.viewCount, 0);
@@ -420,7 +481,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
 
   // Recent comments from most recently published videos
   const commentEntries: { author: string; text: string; videoTitle: string; date: string }[] = [];
-  const videosWithComments = [...allVideos]
+  const videosWithComments = [...topPerformers, ...bottomPerformers]
     .filter((v) => v.topComments?.length)
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   outer: for (const v of videosWithComments) {
@@ -447,8 +508,9 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const maxBotSec = botDurations.length ? Math.max(...botDurations) : 0;
   const topLengthRange = fmtMins(minTopSec) === fmtMins(maxTopSec) ? fmtMins(avgTopSec) : `${fmtMins(minTopSec)}–${fmtMins(maxTopSec)}`;
   const botLengthRange = fmtMins(minBotSec) === fmtMins(maxBotSec) ? fmtMins(avgBotSec) : `${fmtMins(minBotSec)}–${fmtMins(maxBotSec)}`;
-  const titleAnalysis = extractTitleFormulas(topPerformers.map((v) => v.title));
+  const titleCategories = extractTitleCategories(topPerformers.map((v) => v.title), bottomPerformers.map((v) => v.title));
   const hookClusters = extractHookClusters(topPerformers.map((v) => v.title));
+  const bottomHookClusters = extractHookClusters(bottomPerformers.map((v) => v.title));
 
   return (
     <div className="min-h-full">
@@ -559,8 +621,8 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
             </div>
           </Card>
 
-          {/* Top Content + Recent Comments */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* Top Content + Recent Comments — hidden on All Time (Video Performance covers it) */}
+          {period !== "alltime" && <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <div className="lg:col-span-3">
               <Card title="Top Content" subtitle={`By views · ${periodLabel}`}>
                 {sortedByViews.length > 0 ? (
@@ -618,7 +680,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                 )}
               </Card>
             </div>
-          </div>
+          </div>}
 
           {/* Video Performance */}
           <Card title="Video Performance">
@@ -634,26 +696,89 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
       {tab === "analysis" && (
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
 
-          {/* Success Patterns */}
-          {(autopsy?.topPerformerPattern || topDurations.length > 0 || titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0 || (commentIntel?.themes?.length ?? 0) > 0) && (
-            <Card title="Success Patterns" subtitle="Deeper breakdown of your top-performer data">
-              <div className="space-y-3">
+          {/* Winning Titles */}
+          {titleCategories.length > 0 && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                <Type className="w-3.5 h-3.5 text-violet-400" />
+                <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Winning Titles</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-xs text-zinc-300 leading-relaxed">{buildTitlesInsight(titleCategories, topPerformers.length)}</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {titleCategories.map((cat) => {
+                    const accentClass: Record<string, string> = {
+                      rose: "text-rose-400",
+                      amber: "text-amber-400",
+                      blue: "text-blue-400",
+                      violet: "text-violet-400",
+                      teal: "text-teal-400",
+                    };
+                    const borderClass: Record<string, string> = {
+                      rose: "border-rose-900/30",
+                      amber: "border-amber-900/30",
+                      blue: "border-blue-900/30",
+                      violet: "border-violet-900/30",
+                      teal: "border-teal-900/30",
+                    };
+                    const accent = accentClass[cat.color] ?? "text-zinc-400";
+                    const border = borderClass[cat.color] ?? "border-[#1a1a1d]";
+                    return (
+                      <div key={cat.key} className={`bg-[#0d0d0f] border ${border} rounded-lg p-3`}>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <cat.Icon className={`w-3 h-3 ${accent} shrink-0`} />
+                          <p className={`text-[10px] font-semibold ${accent} uppercase tracking-wider leading-none`}>{cat.name}</p>
+                        </div>
+                        <p className="text-[11px] text-zinc-400 leading-snug mb-1.5">{cat.description}</p>
+                        <p className="text-[10px] text-zinc-600 font-mono mb-2.5 leading-snug">{cat.formula}</p>
+                        <div className="border-t border-[#1a1a1d] pt-2 space-y-1">
+                          <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">Top performers · {cat.examples.length}</p>
+                          {cat.examples.map((ex, i) => (
+                            <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{ex}&rdquo;</p>
+                          ))}
+                        </div>
+                        {bottomPerformers.length > 0 && (
+                          <div className="border-t border-[#1a1a1d] pt-2 mt-2 space-y-1">
+                            <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">
+                              Bottom performers · {cat.bottomExamples.length} {cat.bottomExamples.length === 0 ? "— pattern absent" : ""}
+                            </p>
+                            {cat.bottomExamples.length > 0 ? (
+                              cat.bottomExamples.map((ex, i) => (
+                                <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{ex}&rdquo;</p>
+                              ))
+                            ) : (
+                              <p className="text-[11px] text-zinc-700 italic">Not seen in bottom performers.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
-                {autopsy?.topPerformerPattern && (
-                  <div className="bg-[#0d0d0f] rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Zap className="w-3.5 h-3.5 text-amber-500" />
-                      <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Winning Hooks</p>
-                    </div>
-                    <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.topPerformerPattern}</p>
-                    {topPerformers.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-[#1a1a1d]">
+          {/* Winning Hooks */}
+          {autopsy?.topPerformerPattern && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Winning Hooks</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.topPerformerPattern}</p>
+                {topPerformers.length > 0 && (
+                  <div className="pt-4 border-t border-[#1f1f22]">
+                    <div className="grid sm:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers</p>
                         {hookClusters.length >= 2 ? (
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             {hookClusters.map((cluster) => (
                               <div key={cluster.label}>
-                                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">{cluster.label}</p>
-                                <div className="space-y-0.5">
+                                <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
+                                <div className="space-y-1">
                                   {cluster.examples.map((title, i) => (
                                     <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{title}&rdquo;</p>
                                   ))}
@@ -663,108 +788,89 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                           </div>
                         ) : (
                           <div className="space-y-1">
-                            <p className="text-[10px] text-zinc-600 mb-1.5">Examples from top performers</p>
-                            {topPerformers.slice(0, 5).map((v) => (
+                            {topPerformers.slice(0, 8).map((v) => (
                               <p key={v.id} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
                             ))}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {(topDurations.length > 0 || titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0) && (
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {topDurations.length > 0 && (
-                      <div className="bg-[#0d0d0f] rounded-lg p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Clock className="w-3.5 h-3.5 text-blue-400" />
-                          <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Optimal Length</p>
-                        </div>
-                        <div className="space-y-2.5">
-                          <div>
-                            <p className="text-[10px] text-zinc-600 mb-0.5">Top performers · {topDurations.length} videos</p>
-                            <p className="text-sm font-semibold text-zinc-200">
-                              {topLengthRange}
-                              <span className="text-[11px] font-normal text-zinc-500 ml-1.5">avg {fmtMins(avgTopSec)}</span>
-                            </p>
-                          </div>
-                          {botDurations.length > 0 && (
-                            <div>
-                              <p className="text-[10px] text-zinc-600 mb-0.5">Bottom performers · {botDurations.length} videos</p>
-                              <p className="text-sm text-zinc-400">
-                                {botLengthRange}
-                                <span className="text-[11px] text-zinc-600 ml-1.5">avg {fmtMins(avgBotSec)}</span>
-                              </p>
+                      {bottomPerformers.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers</p>
+                          {bottomHookClusters.length >= 2 ? (
+                            <div className="space-y-4">
+                              {bottomHookClusters.map((cluster) => (
+                                <div key={cluster.label}>
+                                  <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
+                                  <div className="space-y-1">
+                                    {cluster.examples.map((title, i) => (
+                                      <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{title}&rdquo;</p>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              {bottomPerformers.slice(0, 8).map((v) => (
+                                <p key={v.id} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
+                              ))}
                             </div>
                           )}
                         </div>
-                      </div>
-                    )}
-
-                    {(titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0) && (
-                      <div className="bg-[#0d0d0f] rounded-lg p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Type className="w-3.5 h-3.5 text-violet-400" />
-                          <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Title Patterns</p>
-                        </div>
-                        {titleAnalysis.formulas.length > 0 && (
-                          <ul className="space-y-4">
-                            {titleAnalysis.formulas.map((f) => (
-                              <li key={f.formula}>
-                                <div className="flex items-baseline gap-1.5 mb-1.5">
-                                  <span className="text-violet-500 shrink-0 text-[10px]">✓</span>
-                                  <p className="text-xs font-medium text-zinc-200">
-                                    {f.formula}
-                                    <span className="text-zinc-600 font-normal ml-1.5">({f.count}/{topPerformers.length})</span>
-                                  </p>
-                                </div>
-                                <div className="ml-3.5 space-y-0.5">
-                                  {f.examples.map((ex, i) => (
-                                    <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{ex}&rdquo;</p>
-                                  ))}
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {titleAnalysis.styleNotes.length > 0 && (
-                          <div className={titleAnalysis.formulas.length > 0 ? "mt-3 pt-3 border-t border-[#1a1a1d]" : ""}>
-                            <ul className="space-y-1">
-                              {titleAnalysis.styleNotes.map((note) => (
-                                <li key={note} className="text-[11px] text-zinc-600 italic">{note}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {commentIntel && commentIntel.themes.length > 0 && (
-                  <div className="bg-[#0d0d0f] rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Layers className="w-3.5 h-3.5 text-teal-400" />
-                      <p className="text-[10px] font-semibold text-teal-400 uppercase tracking-wider">Audience-Validated Topics</p>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
-                      {commentIntel.themes.slice(0, 4).map((theme) => (
-                        <div key={theme.name} className="flex items-start gap-2">
-                          <span className="text-teal-600 shrink-0 mt-0.5">·</span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium text-zinc-300 leading-snug">{theme.name}</p>
-                            <p className="text-[10px] text-zinc-600">{theme.commentCount} mentions · {theme.sentiment}</p>
-                          </div>
-                        </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 )}
-
               </div>
-            </Card>
+            </div>
+          )}
+
+          {/* Winning Lengths */}
+          {topDurations.length > 0 && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                <Clock className="w-3.5 h-3.5 text-blue-400" />
+                <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Winning Lengths</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-xs text-zinc-300 leading-relaxed">{buildLengthInsight(avgTopSec, topLengthRange, avgBotSec, botLengthRange, topDurations.length, botDurations.length)}</p>
+                <div className="pt-4 border-t border-[#1f1f22]">
+                  <div className="grid sm:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers · avg {fmtMins(avgTopSec)}</p>
+                      <div className="space-y-1.5">
+                        {topPerformers.slice(0, 8).map((v) => {
+                          const secs = parseDurationSeconds(v.duration);
+                          return secs > 0 ? (
+                            <div key={v.id} className="flex items-baseline gap-2">
+                              <span className="text-[10px] font-mono text-blue-400 shrink-0 w-7">{fmtMins(secs)}</span>
+                              <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                    {botDurations.length > 0 && (
+                      <div>
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers · avg {fmtMins(avgBotSec)}</p>
+                        <div className="space-y-1.5">
+                          {bottomPerformers.slice(0, 8).map((v) => {
+                            const secs = parseDurationSeconds(v.duration);
+                            return secs > 0 ? (
+                              <div key={v.id} className="flex items-baseline gap-2">
+                                <span className="text-[10px] font-mono text-zinc-600 shrink-0 w-7">{fmtMins(secs)}</span>
+                                <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Channel Autopsy */}

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Zap, PlayCircle, Camera, Music2, LayoutDashboard,
   MessageSquare, ChevronDown, ChevronRight, AlertCircle,
-  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb,
+  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb, RefreshCw,
 } from "lucide-react";
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
@@ -560,8 +560,17 @@ export default function WorkspaceShell({
           )}
         </div>
 
-        {/* Settings — pinned to sidebar bottom */}
-        <div className="shrink-0 border-t border-[#1f1f22] px-2 py-2">
+        {/* Settings + Re-analyze — pinned to sidebar bottom */}
+        <div className="shrink-0 border-t border-[#1f1f22] px-2 py-2 space-y-0.5">
+          {ytConn && (
+            <a
+              href="/analyzing"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[12px] font-medium">Re-analyze</span>
+            </a>
+          )}
           <a
             href="/settings"
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"

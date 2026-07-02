@@ -42,6 +42,7 @@ export interface ChannelSummary {
   topPerformers: VideoWithScore[];
   bottomPerformers: VideoWithScore[];
   outliers: VideoWithScore[];
+  recentVideos?: VideoWithScore[];
   totalVideosAnalysed: number;
   dateRange: { from: string; to: string };
   topCommenters?: { author: string; count: number }[];
