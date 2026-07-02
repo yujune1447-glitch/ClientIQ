@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
   MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
-  Sparkles, Loader2, X, Send,
+  Loader2, Send, BookmarkPlus, Sparkles,
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
+import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
+import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
   ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence,
@@ -27,7 +29,40 @@ export interface AnalysisData {
 }
 
 type Period = "weekly" | "monthly" | "alltime";
-type ModalMsg = { role: "user" | "assistant"; content: string; hidden?: boolean };
+
+const PLAN_INIT_PROMPT =
+  "You are a content planning partner for a YouTube creator. You have access to their channel data — top performers, engagement patterns, audience signals. Your job is to help them develop their next pieces of content.\n\nStart by asking 2–3 short, targeted questions to understand what they want to make next. Think about: topics they’ve been sitting on, formats they haven’t tried, audience gaps, seasonal angles. Keep each question to one sentence.\n\nDo not generate ideas yet. Just ask.";
+
+function extractIdeas(text: string): Array<{ title: string; hook: string; length: string; structure: string; why_it_works: string }> {
+  const normalized = text.replace(/\r/g, "");
+  const ideas: Array<{ title: string; hook: string; length: string; structure: string; why_it_works: string }> = [];
+  const titleRe = /\*\*Title\*\*:?\s*(.+)/gi;
+  const titles: Array<{ index: number; title: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = titleRe.exec(normalized)) !== null) {
+    titles.push({ index: m.index, title: m[1].trim() });
+  }
+  for (let t = 0; t < titles.length; t++) {
+    const block = normalized.slice(titles[t].index, t + 1 < titles.length ? titles[t + 1].index : normalized.length);
+    const field = (...keys: string[]): string => {
+      for (const key of keys) {
+        const esc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const hit = block.match(new RegExp(`\\*\\*${esc}\\*\\*:?\\s*([\\s\\S]+?)(?=\\n\\*\\*|\\n---|-{3,}|$)`, "i"));
+        const val = hit?.[1]?.trim();
+        if (val) return val;
+      }
+      return "";
+    };
+    ideas.push({
+      title: titles[t].title,
+      hook: field("Hook"),
+      length: field("Optimal Length", "Length", "Optimal length"),
+      structure: field("Outline", "Structure", "Video Outline", "Video Structure"),
+      why_it_works: field("Why it’ll work", "Why it will work", "Why this works", "Why"),
+    });
+  }
+  return ideas;
+}
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "weekly", label: "Weekly" },
@@ -230,24 +265,77 @@ export function AnalysisContent({
   return <YouTubeView analysis={analysis} snapshots={snapshots} />;
 }
 
+type YtTab = "live" | "analysis" | "ideas" | "channel-ideas";
+const YT_TABS: { key: YtTab; label: string }[] = [
+  { key: "live", label: "Live Stats" },
+  { key: "analysis", label: "Channel Analysis" },
+  { key: "ideas", label: "Planning Content" },
+  { key: "channel-ideas", label: "Channel Ideas" },
+];
+
 function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshots: ChannelSnapshot[] }) {
   const { summary, autopsy, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
 
+  const [tab, setTab] = useState<YtTab>("live");
   const [period, setPeriod] = useState<Period>("monthly");
-  const [ideasOpen, setIdeasOpen] = useState(false);
-  const [modalMsgs, setModalMsgs] = useState<ModalMsg[]>([]);
-  const [modalInput, setModalInput] = useState("");
-  const [modalLoading, setModalLoading] = useState(false);
-  const modalInitRef = useRef(false);
-  const modalEndRef = useRef<HTMLDivElement>(null);
-  const modalInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { messages: planMsgs, setMessages: setPlanMsgs, loading: planLoading, append: planAppend } = useChatStream(id);
+  const [planInput, setPlanInput] = useState("");
+  const [planSaveStatus, setPlanSaveStatus] = useState<Map<number, "saving" | "saved" | "error">>(new Map());
+  const planChatId = useRef(crypto.randomUUID());
+  const planInitRef = useRef(false);
+  const planEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (ideasOpen) {
-      modalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (tab !== "ideas" || planInitRef.current) return;
+    planInitRef.current = true;
+    const hidden: ChatMsg = { role: "user", content: PLAN_INIT_PROMPT, hidden: true };
+    setPlanMsgs([hidden]);
+    planAppend([hidden]);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (tab === "ideas") planEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [planMsgs, tab]);
+
+  const handlePlanSend = async () => {
+    const text = planInput.trim();
+    if (!text || planLoading) return;
+    setPlanInput("");
+    const userMsg: ChatMsg = { role: "user", content: text };
+    const updated = [...planMsgs, userMsg];
+    setPlanMsgs(updated);
+    await planAppend(updated);
+  };
+
+  const saveIdeasFromMsg = async (msgIndex: number, msgText: string) => {
+    setPlanSaveStatus((prev) => new Map(prev).set(msgIndex, "saving"));
+    try {
+      const ideas = extractIdeas(msgText);
+      await Promise.all(
+        ideas.map((idea) =>
+          fetch("/api/saved-ideas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: "youtube",
+              title: idea.title,
+              hook: idea.hook || null,
+              length: idea.length || null,
+              structure: idea.structure || null,
+              why_it_works: idea.why_it_works || null,
+              source: "ai",
+              source_chat_id: planChatId.current,
+            }),
+          })
+        )
+      );
+      setPlanSaveStatus((prev) => new Map(prev).set(msgIndex, "saved"));
+    } catch {
+      setPlanSaveStatus((prev) => new Map(prev).set(msgIndex, "error"));
     }
-  }, [modalMsgs, ideasOpen]);
+  };
 
   // Deduplicated video pool from all stored performer lists
   const allVideos: VideoWithScore[] = (() => {
@@ -285,85 +373,6 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
     }
   }
 
-  const openIdeasModal = async () => {
-    setIdeasOpen(true);
-    if (modalInitRef.current) return;
-    modalInitRef.current = true;
-
-    const initPrompt =
-      "Based on my channel data, give me 3 specific, data-backed content ideas I should create this week. For each: a punchy working title, why it fits my channel right now, and the hook strategy for the first 30 seconds. Be direct and specific.";
-
-    setModalMsgs([{ role: "assistant", content: "" }]);
-    setModalLoading(true);
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: initPrompt }],
-          analysisId: id,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error();
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let text = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        text += decoder.decode(value, { stream: true });
-        setModalMsgs([{ role: "assistant", content: text }]);
-      }
-      setModalMsgs([
-        { role: "user", content: initPrompt, hidden: true },
-        { role: "assistant", content: text },
-      ]);
-    } catch {
-      setModalMsgs([
-        { role: "assistant", content: "Ready to help you brainstorm content ideas. What would you like to explore?" },
-      ]);
-    } finally {
-      setModalLoading(false);
-    }
-  };
-
-  const sendModalMessage = async () => {
-    const text = modalInput.trim();
-    if (!text || modalLoading) return;
-    setModalInput("");
-    const userMsg: ModalMsg = { role: "user", content: text };
-    const updated = [...modalMsgs, userMsg];
-    setModalMsgs([...updated, { role: "assistant", content: "" }]);
-    setModalLoading(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: updated
-            .filter((m) => !m.hidden)
-            .map((m) => ({ role: m.role, content: m.content })),
-          analysisId: id,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error();
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let reply = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        reply += decoder.decode(value, { stream: true });
-        setModalMsgs([...updated, { role: "assistant", content: reply }]);
-      }
-    } catch {
-      setModalMsgs([...updated, { role: "assistant", content: "Something went wrong. Try again." }]);
-    } finally {
-      setModalLoading(false);
-    }
-  };
-
   const periodLabel = period === "weekly" ? "last 7 days" : period === "monthly" ? "last 30 days" : "all time";
 
   return (
@@ -379,338 +388,364 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
-
-        {/* Channel header */}
-        <div className="flex items-center gap-3 py-1">
-          {channel.thumbnail ? (
-            <img src={channel.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover" />
-          ) : (
-            <div className="w-9 h-9 rounded-full bg-[#ff3040] flex items-center justify-center shrink-0">
-              <PlayCircle className="w-4 h-4 text-white" />
-            </div>
-          )}
-          <div>
-            <h1 className="text-base font-semibold leading-tight">{channel.title}</h1>
-            <p className="text-[11px] text-zinc-500">
-              Analysed {new Date(createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-            </p>
-          </div>
-          <div className="ml-auto flex items-center gap-5 text-right">
+      {/* Channel header — always visible */}
+      <div className="border-b border-[#1f1f22]">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex items-center gap-3 pt-6 pb-4">
+            {channel.thumbnail ? (
+              <img src={channel.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-[#ff3040] flex items-center justify-center shrink-0">
+                <PlayCircle className="w-4 h-4 text-white" />
+              </div>
+            )}
             <div>
-              <p className="text-sm font-bold tabular-nums">{fmt(channel.subscriberCount)}</p>
-              <p className="text-[10px] text-zinc-600">Subscribers</p>
+              <h1 className="text-base font-semibold leading-tight">{channel.title}</h1>
+              <p className="text-[11px] text-zinc-500">
+                Analysed {new Date(createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
             </div>
-            <div>
-              <p className="text-sm font-bold tabular-nums">{averages.ctr}%</p>
-              <p className="text-[10px] text-zinc-600">Avg CTR</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Period toggle */}
-        <div className="flex items-center gap-1 bg-[#111113] border border-[#1f1f22] rounded-lg p-1 w-fit">
-          {PERIODS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setPeriod(key)}
-              className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                period === key
-                  ? "bg-[#1c1c1f] text-white shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* BOX 1 — Channel Overview */}
-        <Card title="Channel Overview">
-          <div className="flex divide-x divide-[#1f1f22]">
-            <StatBlock
-              label="Subscribers"
-              value={fmt(channel.subscriberCount)}
-              delta={subDelta}
-              sub={`change, ${periodLabel}`}
-            />
-            <StatBlock
-              label="Views"
-              value={periodVideos.length > 0 ? fmt(totalPeriodViews) : "—"}
-              sub={`from ${periodVideos.length} video${periodVideos.length !== 1 ? "s" : ""}, ${periodLabel}`}
-            />
-            <StatBlock
-              label="Watch Time"
-              value={totalWatchHours > 0.1 ? `${totalWatchHours < 1000 ? totalWatchHours.toFixed(1) : fmt(Math.round(totalWatchHours))}h` : "—"}
-              sub="estimated hours"
-            />
-            <StatBlock
-              label="Avg Views / Video"
-              value={fmt(averages.views)}
-              sub="across all analysed"
-            />
-          </div>
-        </Card>
-
-        {/* BOX 2 + BOX 3 — Top Content + Recent Comments */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-
-          {/* BOX 2 — Top Content */}
-          <div className="lg:col-span-3">
-            <Card
-              title="Top Content"
-              subtitle={`By views · ${periodLabel}`}
-            >
-              {sortedByViews.length > 0 ? (
-                <div className="space-y-0.5">
-                  {sortedByViews.slice(0, 10).map((v, i) => (
-                    <a
-                      key={v.id}
-                      href={`https://youtube.com/watch?v=${v.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#161618] transition-colors group"
-                    >
-                      <span className="text-[11px] font-mono text-zinc-600 w-4 shrink-0 text-right">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors leading-tight">
-                          {v.title}
-                        </p>
-                        <p className="text-[10px] text-zinc-600 mt-0.5">{relDate(v.publishedAt)}</p>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
-                        <span className="flex items-center gap-1">
-                          <Eye className="w-3 h-3" />
-                          {fmt(v.viewCount)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <ThumbsUp className="w-3 h-3" />
-                          {fmt(v.likeCount)}
-                        </span>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-zinc-600 py-6 text-center">
-                  No videos published in this period.
-                </p>
-              )}
-            </Card>
-          </div>
-
-          {/* BOX 3 — Recent Comments */}
-          <div className="lg:col-span-2">
-            <Card title="Recent Comments">
-              {commentEntries.length > 0 ? (
-                <div className="space-y-4 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
-                  {commentEntries.map((c, i) => (
-                    <div key={i} className="flex gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-[#1c1c1f] flex items-center justify-center shrink-0 text-[10px] font-bold text-zinc-400 uppercase">
-                        {c.author.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-1.5 mb-0.5">
-                          <p className="text-[11px] font-semibold text-zinc-300 truncate">{c.author}</p>
-                          <p className="text-[10px] text-zinc-600 shrink-0">{relDate(c.date)}</p>
-                        </div>
-                        <p className="text-xs text-zinc-400 leading-relaxed">{c.text}</p>
-                        <p className="text-[10px] text-zinc-700 mt-1 truncate">{c.videoTitle}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-zinc-600 py-6 text-center">
-                  No comment data available.
-                </p>
-              )}
-            </Card>
-          </div>
-        </div>
-
-        {/* BOX 4 — Video Performance */}
-        <Card title="Video Performance">
-          <div className="grid md:grid-cols-2 gap-6">
-            <VideoList label="Top performers" videos={topPerformers} variant="top" />
-            <VideoList label="Lowest performers" videos={bottomPerformers} variant="bottom" />
-          </div>
-        </Card>
-
-        {/* BOX 5 — Channel Autopsy */}
-        {autopsy && (
-          <Card title="Channel Autopsy">
-            <div className="space-y-4">
-              <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
-                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Overall diagnosis</p>
-                <p className="text-sm text-zinc-200 leading-relaxed">{autopsy.overallTrend}</p>
+            <div className="ml-auto flex items-center gap-5 text-right">
+              <div>
+                <p className="text-sm font-bold tabular-nums">{fmt(channel.subscriberCount)}</p>
+                <p className="text-[10px] text-zinc-600">Subscribers</p>
               </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="bg-[#0f1a14] border border-emerald-900/30 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                    <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">What&apos;s working</p>
-                  </div>
-                  <ul className="space-y-2">
-                    {autopsy.whatIsWorking.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
-                        <span className="text-emerald-600 shrink-0 mt-0.5">✓</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="bg-[#1a0f0f] border border-red-900/30 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <TrendingDown className="w-3.5 h-3.5 text-red-500" />
-                    <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wider">What isn&apos;t working</p>
-                  </div>
-                  <ul className="space-y-2">
-                    {autopsy.whatIsNotWorking.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
-                        <span className="text-red-600 shrink-0 mt-0.5">✗</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Audience insight</p>
-                  <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.audienceInsights}</p>
-                </div>
-                <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="w-3 h-3 text-[#ff3040]" />
-                    <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Actions to take now</p>
-                  </div>
-                  <ul className="space-y-1.5">
-                    {autopsy.actionableAdvice.map((advice, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
-                        <span className="text-[#ff3040] shrink-0 font-mono">{i + 1}.</span>
-                        {advice}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              <div>
+                <p className="text-sm font-bold tabular-nums">{averages.ctr}%</p>
+                <p className="text-[10px] text-zinc-600">Avg CTR</p>
               </div>
             </div>
-          </Card>
-        )}
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex gap-0">
+            {YT_TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors ${
+                  tab === key
+                    ? "border-[#ff3040] text-white"
+                    : "border-transparent text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Floating Ideas button */}
-      <button
-        onClick={openIdeasModal}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#ff3040] hover:bg-[#e02030] text-white text-sm font-semibold shadow-xl transition-colors"
-      >
-        <Sparkles className="w-4 h-4" />
-        Ideas for You
-      </button>
+      {/* ── Tab: Live Stats ── */}
+      {tab === "live" && (
+        <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
 
-      {/* Ideas modal */}
-      {ideasOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setIdeasOpen(false)}
-          />
-          <div className="relative w-full max-w-xl h-[78vh] bg-[#111113] border border-[#27272a] rounded-2xl flex flex-col shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center gap-2.5 px-5 py-4 border-b border-[#1f1f22] shrink-0">
-              <div className="w-6 h-6 bg-[#ff3040]/10 rounded-lg flex items-center justify-center">
-                <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
-              </div>
-              <p className="text-sm font-semibold flex-1">Ideas for You</p>
+          {/* Period toggle */}
+          <div className="flex items-center gap-1 bg-[#111113] border border-[#1f1f22] rounded-lg p-1 w-fit">
+            {PERIODS.map(({ key, label }) => (
               <button
-                onClick={() => setIdeasOpen(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-[#1c1c1f] transition-colors"
+                key={key}
+                onClick={() => setPeriod(key)}
+                className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  period === key
+                    ? "bg-[#1c1c1f] text-white shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
               >
-                <X className="w-4 h-4" />
+                {label}
               </button>
+            ))}
+          </div>
+
+          {/* Channel Overview */}
+          <Card title="Channel Overview">
+            <div className="flex divide-x divide-[#1f1f22]">
+              <StatBlock
+                label="Subscribers"
+                value={fmt(channel.subscriberCount)}
+                delta={subDelta}
+                sub={`change, ${periodLabel}`}
+              />
+              <StatBlock
+                label="Views"
+                value={periodVideos.length > 0 ? fmt(totalPeriodViews) : "—"}
+                sub={`from ${periodVideos.length} video${periodVideos.length !== 1 ? "s" : ""}, ${periodLabel}`}
+              />
+              <StatBlock
+                label="Watch Time"
+                value={totalWatchHours > 0.1 ? `${totalWatchHours < 1000 ? totalWatchHours.toFixed(1) : fmt(Math.round(totalWatchHours))}h` : "—"}
+                sub="estimated hours"
+              />
+              <StatBlock
+                label="Avg Views / Video"
+                value={fmt(averages.views)}
+                sub="across all analysed"
+              />
+            </div>
+          </Card>
+
+          {/* Top Content + Recent Comments */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-3">
+              <Card title="Top Content" subtitle={`By views · ${periodLabel}`}>
+                {sortedByViews.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {sortedByViews.slice(0, 10).map((v, i) => (
+                      <a
+                        key={v.id}
+                        href={`https://youtube.com/watch?v=${v.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#161618] transition-colors group"
+                      >
+                        <span className="text-[11px] font-mono text-zinc-600 w-4 shrink-0 text-right">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors leading-tight">
+                            {v.title}
+                          </p>
+                          <p className="text-[10px] text-zinc-600 mt-0.5">{relDate(v.publishedAt)}</p>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
+                          <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{fmt(v.viewCount)}</span>
+                          <span className="flex items-center gap-1"><ThumbsUp className="w-3 h-3" />{fmt(v.likeCount)}</span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-600 py-6 text-center">No videos published in this period.</p>
+                )}
+              </Card>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {modalMsgs.filter((m) => !m.hidden).length === 0 && modalLoading && (
-                <div className="flex gap-2.5 items-start">
-                  <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="w-3 h-3 text-[#ff3040]" />
+            <div className="lg:col-span-2">
+              <Card title="Recent Comments">
+                {commentEntries.length > 0 ? (
+                  <div className="space-y-4 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
+                    {commentEntries.map((c, i) => (
+                      <div key={i} className="flex gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-[#1c1c1f] flex items-center justify-center shrink-0 text-[10px] font-bold text-zinc-400 uppercase">
+                          {c.author.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-1.5 mb-0.5">
+                            <p className="text-[11px] font-semibold text-zinc-300 truncate">{c.author}</p>
+                            <p className="text-[10px] text-zinc-600 shrink-0">{relDate(c.date)}</p>
+                          </div>
+                          <p className="text-xs text-zinc-400 leading-relaxed">{c.text}</p>
+                          <p className="text-[10px] text-zinc-700 mt-1 truncate">{c.videoTitle}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="bg-[#1a1a1d] rounded-2xl rounded-tl-sm px-4 py-3">
-                    <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                ) : (
+                  <p className="text-sm text-zinc-600 py-6 text-center">No comment data available.</p>
+                )}
+              </Card>
+            </div>
+          </div>
+
+          {/* Video Performance */}
+          <Card title="Video Performance">
+            <div className="grid md:grid-cols-2 gap-6">
+              <VideoList label="Top performers" videos={topPerformers} variant="top" />
+              <VideoList label="Lowest performers" videos={bottomPerformers} variant="bottom" />
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Tab: Channel Analysis ── */}
+      {tab === "analysis" && (
+        <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
+          {autopsy ? (
+            <Card title="Channel Autopsy">
+              <div className="space-y-4">
+                <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Overall diagnosis</p>
+                  <p className="text-sm text-zinc-200 leading-relaxed">{autopsy.overallTrend}</p>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="bg-[#0f1a14] border border-emerald-900/30 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                      <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">What&apos;s working</p>
+                    </div>
+                    <ul className="space-y-2">
+                      {autopsy.whatIsWorking.map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                          <span className="text-emerald-600 shrink-0 mt-0.5">✓</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="bg-[#1a0f0f] border border-red-900/30 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                      <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wider">What isn&apos;t working</p>
+                    </div>
+                    <ul className="space-y-2">
+                      {autopsy.whatIsNotWorking.map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                          <span className="text-red-600 shrink-0 mt-0.5">✗</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
-              )}
 
-              {modalMsgs
-                .filter((m) => !m.hidden)
-                .map((msg, i, arr) => (
-                  <div
-                    key={i}
-                    className={`flex gap-2.5 items-start ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-                  >
-                    {msg.role === "assistant" && (
-                      <div className="w-6 h-6 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                        <Sparkles className="w-3 h-3 text-[#ff3040]" />
-                      </div>
-                    )}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                    <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Audience insight</p>
+                    <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.audienceInsights}</p>
+                  </div>
+                  <div className="bg-[#0d0d0f] rounded-lg px-4 py-3.5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-3 h-3 text-[#ff3040]" />
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Actions to take now</p>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {autopsy.actionableAdvice.map((advice, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                          <span className="text-[#ff3040] shrink-0 font-mono">{i + 1}.</span>
+                          {advice}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <div className="flex items-center justify-center py-24 text-zinc-600 text-sm">
+              No analysis data available yet.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Planning Content ── */}
+      {tab === "ideas" && (
+        <div className="flex flex-col h-[calc(100vh-116px)]">
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 max-w-3xl mx-auto w-full">
+            {planMsgs.filter((m) => !m.hidden).length === 0 && planLoading && (
+              <div className="flex gap-3 items-start">
+                <div className="w-7 h-7 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
+                </div>
+                <div className="bg-[#111113] border border-[#27272a] rounded-2xl rounded-tl-sm px-4 py-3">
+                  <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                </div>
+              </div>
+            )}
+
+            {planMsgs.filter((m) => !m.hidden).map((msg, i) => {
+              const visibleIdx = i;
+              const globalIdx = planMsgs.indexOf(msg);
+              const hasIdeas = msg.role === "assistant" && extractIdeas(msg.content).length > 0;
+              const saveStatus = planSaveStatus.get(globalIdx);
+              return (
+                <div key={globalIdx} className={`flex gap-3 items-start ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                  {msg.role === "assistant" && (
+                    <div className="w-7 h-7 bg-[#1c1c1f] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2 max-w-[85%]">
                     <div
-                      className={`max-w-[87%] text-[13px] leading-relaxed whitespace-pre-wrap rounded-2xl px-4 py-3 ${
+                      className={`text-[13px] leading-relaxed whitespace-pre-wrap rounded-2xl px-4 py-3 ${
                         msg.role === "user"
                           ? "bg-[#ff3040] text-white rounded-tr-sm"
-                          : "bg-[#1a1a1d] text-zinc-200 rounded-tl-sm"
+                          : "bg-[#111113] text-zinc-200 border border-[#27272a] rounded-tl-sm"
                       }`}
                     >
-                      {msg.content ||
-                        (msg.role === "assistant" && modalLoading && i === arr.length - 1 ? (
-                          <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
-                        ) : null)}
+                      {msg.content || (
+                        msg.role === "assistant" && planLoading && visibleIdx === planMsgs.filter((m) => !m.hidden).length - 1
+                          ? <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                          : null
+                      )}
                     </div>
+                    {hasIdeas && !planLoading && (
+                      <button
+                        onClick={() => {
+                          if (saveStatus !== "saving" && saveStatus !== "saved") {
+                            saveIdeasFromMsg(globalIdx, msg.content);
+                          }
+                        }}
+                        disabled={saveStatus === "saving" || saveStatus === "saved"}
+                        className={`self-start flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors ${
+                          saveStatus === "saved"
+                            ? "text-emerald-400 border-emerald-800/40 bg-emerald-950/20 cursor-default"
+                            : saveStatus === "saving"
+                            ? "text-zinc-600 border-[#27272a] cursor-default"
+                            : saveStatus === "error"
+                            ? "text-red-400 border-red-900/40 hover:bg-red-950/20"
+                            : "text-zinc-500 border-[#27272a] hover:text-zinc-300 hover:border-[#3f3f45] hover:bg-[#111113]"
+                        }`}
+                      >
+                        {saveStatus === "saving" ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <BookmarkPlus className="w-3 h-3" />
+                        )}
+                        {saveStatus === "saved"
+                          ? "Saved to Channel Ideas"
+                          : saveStatus === "saving"
+                          ? "Saving…"
+                          : saveStatus === "error"
+                          ? "Failed — retry"
+                          : `Save idea${extractIdeas(msg.content).length > 1 ? "s" : ""}`}
+                      </button>
+                    )}
                   </div>
-                ))}
-              <div ref={modalEndRef} />
-            </div>
-
-            {/* Input */}
-            <div className="shrink-0 border-t border-[#1f1f22] px-4 py-3">
-              <div className="flex items-end gap-2">
-                <div className="flex-1 bg-[#1a1a1d] rounded-xl px-3.5 py-2.5 focus-within:ring-1 focus-within:ring-[#ff3040]/30 transition-all">
-                  <textarea
-                    ref={modalInputRef}
-                    value={modalInput}
-                    onChange={(e) => setModalInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        sendModalMessage();
-                      }
-                    }}
-                    placeholder="Ask about formats, hooks, titles…"
-                    rows={1}
-                    className="w-full bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[100px]"
-                    style={{ fieldSizing: "content" } as React.CSSProperties}
-                  />
                 </div>
-                <button
-                  onClick={sendModalMessage}
-                  disabled={!modalInput.trim() || modalLoading}
-                  className="w-8 h-8 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-30 disabled:cursor-not-allowed rounded-lg flex items-center justify-center shrink-0 transition-colors"
-                >
-                  {modalLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5 text-white" />
-                  )}
-                </button>
+              );
+            })}
+            <div ref={planEndRef} />
+          </div>
+
+          {/* Input bar */}
+          <div className="shrink-0 border-t border-[#1f1f22] bg-[#09090b] px-6 py-3">
+            <div className="max-w-3xl mx-auto flex items-end gap-2">
+              <div className="flex-1 bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 focus-within:border-[#ff3040]/40 transition-colors">
+                <textarea
+                  value={planInput}
+                  onChange={(e) => setPlanInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handlePlanSend();
+                    }
+                  }}
+                  placeholder="Tell me what you want to make…"
+                  rows={1}
+                  disabled={planLoading}
+                  className="w-full bg-transparent text-[13px] text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[120px] disabled:opacity-40"
+                  style={{ fieldSizing: "content" } as React.CSSProperties}
+                />
               </div>
+              <button
+                onClick={handlePlanSend}
+                disabled={!planInput.trim() || planLoading}
+                className="w-8 h-8 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-30 disabled:cursor-not-allowed rounded-lg flex items-center justify-center shrink-0 transition-colors"
+              >
+                {planLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5 text-white" />
+                )}
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Tab: Channel Ideas ── */}
+      {tab === "channel-ideas" && <SavedIdeasBoard platform="youtube" />}
     </div>
   );
 }

@@ -4,20 +4,16 @@ import { useState, useEffect, useRef } from "react";
 import {
   Zap, PlayCircle, Camera, Music2, LayoutDashboard,
   MessageSquare, ChevronDown, ChevronRight, AlertCircle,
-  Send, Loader2, X, Sparkles, Plus,
+  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb,
 } from "lucide-react";
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
+import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
+import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type { ChannelSnapshot } from "@/types";
 
 type AccountType = "youtube" | "instagram" | "tiktok";
-type MainView = "dashboard" | AccountType;
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  hidden?: boolean;
-}
+type MainView = "dashboard" | "saved-ideas" | AccountType;
 
 interface StoredConversation {
   id: string;
@@ -25,7 +21,7 @@ interface StoredConversation {
   accountType: AccountType;
   createdAt: string;
   lastMessage: string;
-  messages: Message[];
+  messages: ChatMsg[];
 }
 
 interface SidebarAnalysis {
@@ -52,7 +48,7 @@ interface TtConn {
 }
 
 interface Props {
-  userId: string;
+  initialView?: MainView;
   sidebarAnalyses: SidebarAnalysis[];
   selectedAnalysisId: string | null;
   selectedAnalysis: AnalysisData | null;
@@ -85,6 +81,7 @@ function saveConversations(convs: StoredConversation[]) {
 }
 
 export default function WorkspaceShell({
+  initialView,
   selectedAnalysisId,
   selectedAnalysis,
   ytConn,
@@ -94,24 +91,28 @@ export default function WorkspaceShell({
   instagramError,
   tiktokError,
 }: Props) {
-  const [mainView, setMainView] = useState<MainView>("dashboard");
+  const [mainView, setMainView] = useState<MainView>(initialView ?? "dashboard");
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const [convosExpanded, setConvosExpanded] = useState(true);
-  // Client-side fallback — fetched the same way the chat API fetches it.
-  // This is the source of truth when server-side props come back null.
+  const [convosExpanded, setConvosExpanded] = useState(false);
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Record<AccountType, boolean>>({
+    youtube: true,
+    instagram: true,
+    tiktok: true,
+  });
   const [clientAnalysis, setClientAnalysis] = useState<AnalysisData | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // The analysis used for BOTH center area AND chat API calls.
-  // Prefer server-provided value; fall back to client-fetched.
   const effectiveAnalysis = selectedAnalysis ?? clientAnalysis;
   const effectiveAnalysisId = effectiveAnalysis?.id ?? selectedAnalysisId;
+
+  const { messages, setMessages, loading: aiLoading, append, reset } = useChatStream(
+    effectiveAnalysisId ?? undefined
+  );
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchLatestAnalysis = async () => {
     try {
@@ -146,106 +147,21 @@ export default function WorkspaceShell({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const streamChat = async (messagesToSend: Message[], convId: string) => {
-    setAiLoading(true);
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: messagesToSend.map((m) => ({ role: m.role, content: m.content })),
-          analysisId: effectiveAnalysisId,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error();
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let text = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        text += decoder.decode(value, { stream: true });
-        setMessages((prev) => [
-          ...prev.slice(0, -1),
-          { role: "assistant", content: text },
-        ]);
-      }
-
-      const finalMessages: Message[] = [
-        ...messagesToSend,
-        { role: "assistant", content: text },
-      ];
-      setConversations((prev) => {
-        const updated = prev.map((c) =>
-          c.id === convId
-            ? { ...c, messages: finalMessages, lastMessage: text.slice(0, 80) }
-            : c
-        );
-        saveConversations(updated);
-        return updated;
-      });
-    } catch {
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        { role: "assistant", content: "Something went wrong. Try again." },
-      ]);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const initConversation = async (convId: string) => {
-    const hiddenInit: Message = { role: "user", content: INIT_PROMPT, hidden: true };
-    setMessages([{ role: "assistant", content: "" }]);
-    setAiLoading(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: INIT_PROMPT }],
-          analysisId: effectiveAnalysisId,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error();
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let text = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        text += decoder.decode(value, { stream: true });
-        setMessages([{ role: "assistant", content: text }]);
-      }
-
-      const finalMessages: Message[] = [
-        hiddenInit,
-        { role: "assistant", content: text },
-      ];
-      setConversations((prev) => {
-        const updated = prev.map((c) =>
-          c.id === convId
-            ? { ...c, messages: finalMessages, lastMessage: text.slice(0, 80) }
-            : c
-        );
-        saveConversations(updated);
-        return updated;
-      });
-    } catch {
-      setMessages([
-        {
-          role: "assistant",
-          content: "Ready to help you analyze your content. What would you like to know?",
-        },
-      ]);
-    } finally {
-      setAiLoading(false);
-    }
+    reset();
+    const hiddenInit: ChatMsg = { role: "user", content: INIT_PROMPT, hidden: true };
+    const replyText = await append([hiddenInit]);
+    const finalMessages: ChatMsg[] = [hiddenInit, { role: "assistant", content: replyText }];
+    setMessages(finalMessages);
+    setConversations((prev) => {
+      const updated = prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages: finalMessages, lastMessage: replyText.slice(0, 80) }
+          : c
+      );
+      saveConversations(updated);
+      return updated;
+    });
   };
 
   const openAccountWithNewChat = (accountType: AccountType, forceNew = false) => {
@@ -312,21 +228,23 @@ export default function WorkspaceShell({
     if (!text || aiLoading) return;
     setChatInput("");
 
-    const userMsg: Message = { role: "user", content: text };
-    const updatedMessages = [...messages, userMsg];
+    const userMsg: ChatMsg = { role: "user", content: text };
+    const updatedMessages: ChatMsg[] = [...messages, userMsg];
     setMessages(updatedMessages);
 
+    const replyText = await append(updatedMessages);
     if (activeConvId) {
+      const finalMessages: ChatMsg[] = [...updatedMessages, { role: "assistant", content: replyText }];
       setConversations((prev) => {
         const updated = prev.map((c) =>
-          c.id === activeConvId ? { ...c, messages: updatedMessages } : c
+          c.id === activeConvId
+            ? { ...c, messages: finalMessages, lastMessage: replyText.slice(0, 80) }
+            : c
         );
         saveConversations(updated);
         return updated;
       });
     }
-
-    await streamChat(updatedMessages, activeConvId ?? "");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -337,13 +255,13 @@ export default function WorkspaceShell({
   };
 
   const startNewChatForCurrentView = () => {
-    const accountType = mainView !== "dashboard" ? (mainView as AccountType) : null;
+    const accountType = (mainView !== "dashboard" && mainView !== "saved-ideas") ? (mainView as AccountType) : null;
     if (accountType) {
       openAccountWithNewChat(accountType, true);
     }
   };
 
-  const displayMessages = messages.filter((m) => !m.hidden);
+  const displayMessages = messages.filter((m: ChatMsg) => !m.hidden);
 
   let centerContent: React.ReactNode;
   if (mainView === "dashboard") {
@@ -355,6 +273,15 @@ export default function WorkspaceShell({
         igConn={igConn}
         ttConn={ttConn}
       />
+    );
+  } else if (mainView === "saved-ideas") {
+    centerContent = (
+      <div className="min-h-full">
+        <div className="border-b border-[#1f1f22] px-6 py-4">
+          <p className="text-sm font-semibold">Saved Ideas</p>
+        </div>
+        <SavedIdeasBoard />
+      </div>
     );
   } else if (mainView === "youtube") {
     centerContent = effectiveAnalysis ? (
@@ -418,7 +345,7 @@ export default function WorkspaceShell({
           {/* Connected Accounts */}
           <div className="px-2 pt-2">
             <p className="px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium">
-              Connected Accounts
+              Accounts
             </p>
             <div className="mt-0.5 space-y-0.5">
               {ytConn ? (
@@ -528,9 +455,30 @@ export default function WorkspaceShell({
             </div>
           </div>
 
-          {/* Previous Conversations */}
+          {/* Divider */}
+          <div className="mx-3 border-t border-[#1f1f22] mt-2" />
+
+          {/* Saved Ideas */}
+          <div className="px-2 pt-1">
+            <button
+              onClick={() => { setMainView("saved-ideas"); setAiPanelOpen(false); }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                mainView === "saved-ideas"
+                  ? "bg-[#1c1c1f] text-white"
+                  : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
+              }`}
+            >
+              <Lightbulb className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[12px] font-medium">Saved Ideas</span>
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="mx-3 border-t border-[#1f1f22] mt-2" />
+
+          {/* History — grouped by platform, collapsed by default */}
           {conversations.length > 0 && (
-            <div className="px-2 pt-3">
+            <div className="px-2 pt-1">
               <button
                 onClick={() => setConvosExpanded((v) => !v)}
                 className="w-full flex items-center gap-1.5 px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium hover:text-zinc-500 transition-colors"
@@ -540,35 +488,87 @@ export default function WorkspaceShell({
                 ) : (
                   <ChevronRight className="w-3 h-3" />
                 )}
-                AI Conversations
+                History
               </button>
               {convosExpanded && (
-                <div className="mt-0.5 space-y-0.5">
-                  {conversations.slice(0, 20).map((conv) => (
-                    <button
-                      key={conv.id}
-                      onClick={() => openSavedConversation(conv)}
-                      className={`w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                        activeConvId === conv.id && aiPanelOpen
-                          ? "bg-[#1c1c1f] text-white"
-                          : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
-                      }`}
-                    >
-                      <MessageSquare className="w-3 h-3 shrink-0 mt-0.5 opacity-60" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium truncate">{conv.title}</p>
-                        {conv.lastMessage && (
-                          <p className="text-[10px] text-zinc-700 truncate mt-0.5">
-                            {conv.lastMessage}
-                          </p>
+                <div className="mt-1 space-y-1">
+                  {(["youtube", "instagram", "tiktok"] as AccountType[]).map((platform) => {
+                    const platformConvs = conversations
+                      .filter((c) => c.accountType === platform)
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    if (!platformConvs.length) return null;
+                    const platformLabel =
+                      platform === "youtube" ? "YouTube" : platform === "instagram" ? "Instagram" : "TikTok";
+                    const platformIcon =
+                      platform === "youtube" ? (
+                        <PlayCircle className="w-3 h-3 text-[#ff3040]" />
+                      ) : platform === "instagram" ? (
+                        <Camera className="w-3 h-3 text-pink-400" />
+                      ) : (
+                        <Music2 className="w-3 h-3 text-cyan-400" />
+                      );
+                    const isExpanded = expandedPlatforms[platform];
+                    return (
+                      <div key={platform}>
+                        <button
+                          onClick={() =>
+                            setExpandedPlatforms((prev) => ({ ...prev, [platform]: !prev[platform] }))
+                          }
+                          className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-3 h-3" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3" />
+                          )}
+                          {platformIcon}
+                          <span className="text-[10px] uppercase tracking-widest font-medium">
+                            {platformLabel}
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="space-y-0.5">
+                            {platformConvs.map((conv) => (
+                              <button
+                                key={conv.id}
+                                onClick={() => openSavedConversation(conv)}
+                                className={`w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                                  activeConvId === conv.id && aiPanelOpen
+                                    ? "bg-[#1c1c1f] text-white"
+                                    : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
+                                }`}
+                              >
+                                <MessageSquare className="w-3 h-3 shrink-0 mt-0.5 opacity-60" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[11px] font-medium truncate">{conv.title}</p>
+                                  {conv.lastMessage && (
+                                    <p className="text-[10px] text-zinc-700 truncate mt-0.5">
+                                      {conv.lastMessage}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
+        </div>
+
+        {/* Settings — pinned to sidebar bottom */}
+        <div className="shrink-0 border-t border-[#1f1f22] px-2 py-2">
+          <a
+            href="/settings"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[12px] font-medium">Settings</span>
+          </a>
         </div>
       </aside>
 
