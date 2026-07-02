@@ -17,3 +17,67 @@
 - Full autonomy granted — never pause, never ask to proceed, never ask any question at all
 - If uncertain, make a decision and continue
 - Treat every message as full permission to complete the entire task
+
+---
+
+# CreatorIQ — Project Rules
+
+## What this is
+YouTube Studio + Meta Business Suite + TikTok Studio unified into one dashboard, with an AI layer that generates specific, data-grounded content structures (title, hook, length, outline) — not generic ideas. Built solo by Jake using Claude Code.
+
+## Tech stack
+- Next.js (App Router)
+- Tailwind CSS
+- Supabase (auth, db, storage)
+- Claude API (analysis + chat)
+- YouTube Data API v3 + YouTube Analytics API
+- Instagram Graph API
+- TikTok for Developers API
+
+## Current status (update this section as you go)
+- YouTube OAuth working, persistent login via refresh tokens
+- Full channel data pull with pagination
+- JS pre-processing layer before Claude analysis
+- Claude API analysis wired up
+- AI right panel with proactive rundowns
+- Analysis page with channel stats
+- Codebase cleaned of dead files
+- Running locally only — not deployed to Vercel yet
+- Instagram + TikTok integrations: not started
+
+## Product rules (do not violate without asking Jake first)
+- Dashboard is informational only — no AI, no actions, fixed grid, minimal scroll
+- Right AI panel is always visible on platform pages, opens automatically on account click
+- New AI chat every time an account is clicked or app opens fresh; new day = new chat
+- AI always speaks first with a proactive rundown, never waits for user prompt
+- Channel Analysis tab (Tab 2) runs weekly in background — not generated on page load
+- Content Ideas tab (Tab 3) is on-demand only — never auto-generated
+- Saved Ideas: AI-generated ideas always saveable; manual add allowed too (see decision log below)
+- Done column in Saved Ideas archives, does not delete
+- AI chat history is account-specific, never mixed across platforms, but a single chat can still answer cross-platform questions
+- Pricing tiers gate features, not data quality — Free = 1 platform / Live Stats only / limited AI messages
+
+## Decision log (resolved "still to flesh out" items)
+- Manual idea creation: allowed, tagged source: manual vs source: ai in schema
+- Done column: archives (hidden from default board view, retrievable via filter), does not delete
+- Ideas For You: one platform at a time, scoped to whichever account's AI panel triggered it
+- "Open in AI Chat" from Saved Ideas: opens the exact chat thread that generated the idea, on that idea's platform
+- Saved Ideas page has search/filter by platform, status, and keyword
+
+## Building protocol
+- Two terminal tabs always: Tab 1 `cd creatoriq && npm run dev`, Tab 2 `cc` (Claude Code, --dangerously-skip-permissions)
+- Kill zombie node processes with `killall node` before restarting dev server
+- Build in focused, single-part increments — one feature/change at a time
+- Test after every single change before moving to the next
+- Git commit after every working part, with a clear message (no giant multi-feature commits)
+- Never commit .env / API keys — confirm .gitignore covers Supabase and API credentials before first push
+
+## Constraints
+- Desktop only for now — do not build responsive/mobile layouts yet
+- No push notifications — email only, and only for account-connect events
+- Figma/wireframe phase happens before large UI build sessions; backend/API work can proceed in parallel without waiting on Figma
+
+## Coding conventions
+- Keep JS pre-processing layer decoupled from Claude API calls so platforms can be added independently
+- Each platform (YouTube/Instagram/TikTok) should follow the same data contract into the analysis layer so Tab 1/2/3 UI components stay platform-agnostic
+- Favor server components for data fetching, client components only where interactivity is required (AI panel, Kanban board, modals)

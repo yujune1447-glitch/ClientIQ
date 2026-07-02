@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = createAdminClient();
 
-  await supabase.from("instagram_connections").upsert(
+  const { error: connError } = await supabase.from("instagram_connections").upsert(
     {
       user_id: userId,
       ig_user_id: igUserId,
@@ -101,6 +101,10 @@ export async function GET(request: NextRequest) {
     },
     { onConflict: "user_id" }
   );
+
+  if (connError) {
+    return NextResponse.redirect(`${APP_URL}/workspace?instagram_error=db_error`);
+  }
 
   return NextResponse.redirect(`${APP_URL}/workspace`);
 }
