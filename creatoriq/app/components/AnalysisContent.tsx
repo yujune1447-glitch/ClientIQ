@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
   MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
-  Loader2, Send, BookmarkPlus, Sparkles,
+  Loader2, Send, BookmarkPlus, Sparkles, Clock, Type, Layers, Zap,
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
@@ -31,7 +31,7 @@ export interface AnalysisData {
 type Period = "weekly" | "monthly" | "alltime";
 
 const PLAN_INIT_PROMPT =
-  "You are a content planning partner for a YouTube creator. You have access to their channel data — top performers, engagement patterns, audience signals. Your job is to help them develop their next pieces of content.\n\nStart by asking 2–3 short, targeted questions to understand what they want to make next. Think about: topics they’ve been sitting on, formats they haven’t tried, audience gaps, seasonal angles. Keep each question to one sentence.\n\nDo not generate ideas yet. Just ask.";
+  "You are a content planning partner for this YouTube creator. You have their channel data in your context — top performers, engagement patterns, audience signals.\n\nOpen with 3–5 short concept suggestions grounded specifically in this channel’s top-performing videos. Look at what titles, topics, and patterns have worked here, then suggest concepts that extend or remix those patterns.\n\nFormat each concept as:\n• [Title] — [one-line hook describing the video’s core angle]\n\nNothing more. No outlines, no hook breakdowns, no length estimates yet.\n\nAfter the list, end with exactly this: \"Pick one, tell me to combine or adjust, or tell me what you actually want to make instead.\"\n\nOnce the creator commits to a single concept (picked from your list or their own idea):\n- Ask at most 1–2 brief clarifying questions only if something critical is missing (e.g. target length if not obvious from the concept)\n- Then generate a full content structure using exactly these markdown headers in order: **Title**, **Hook**, **Optimal Length**, **Outline**, **Why it’ll work**";
 
 function extractIdeas(text: string): Array<{ title: string; hook: string; length: string; structure: string; why_it_works: string }> {
   const normalized = text.replace(/\r/g, "");
@@ -105,6 +105,68 @@ function computeSubDelta(snapshots: ChannelSnapshot[], period: Period, analysisD
   const older = sorted.filter((s) => new Date(s.created_at) <= cutoff);
   if (!older.length) return null;
   return latest.subscriber_count - older[older.length - 1].subscriber_count;
+}
+
+function parseDurationSeconds(iso: string): number {
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] ?? "0") * 3600) + (parseInt(m[2] ?? "0") * 60) + parseInt(m[3] ?? "0");
+}
+
+function fmtMins(seconds: number): string {
+  return `${Math.round(seconds / 60)}m`;
+}
+
+interface TitleFormula { formula: string; count: number; examples: string[] }
+interface TitleAnalysis { formulas: TitleFormula[]; styleNotes: string[] }
+
+function extractTitleFormulas(titles: string[]): TitleAnalysis {
+  const defs: Array<{ formula: string; test: (t: string) => boolean }> = [
+    { formula: "How I [verb]ed [X] in [timeframe]", test: (t) => /^how i\b/i.test(t) },
+    { formula: "[N] [things/ways/tips] to/that [X]", test: (t) => /^\d+\s+(things?|ways?|tips?|reasons?|mistakes?|habits?|steps?|secrets?)\b/i.test(t) },
+    { formula: "I [verb]ed [X] (for [period] / so you don't have to)", test: (t) => /^i\s+(tried|quit|spent|only|made|built|tested|stopped|deleted|ate|ran|lived|went|used|bought|sold|started|switched)\b/i.test(t) },
+    { formula: "Why/What [X] [verb]s", test: (t) => /^(why|what)\b/i.test(t) },
+    { formula: "[You] [verb/are] [X]", test: (t) => /^you\b/i.test(t) },
+    { formula: "[Direct question]?", test: (t) => t.trim().endsWith("?") },
+    { formula: "The [noun] that [verb]ed my [X]", test: (t) => /^the\b/i.test(t) },
+    { formula: "[Doing X] for [N] days/weeks", test: (t) => /for \d+\s*(day|week|month|year)/i.test(t) && !/^(how i|why i|i )\b/i.test(t) },
+  ];
+  const formulas = defs
+    .map(({ formula, test }) => {
+      const examples = titles.filter(test);
+      return { formula, count: examples.length, examples: examples.slice(0, 4) };
+    })
+    .filter((f) => f.count >= 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+
+  const styleNotes: string[] = [];
+  const n = titles.length;
+  if (n > 0) {
+    const lowercaseCount = titles.filter((t) => t === t.toLowerCase()).length;
+    const colonCount = titles.filter((t) => t.includes(":")).length;
+    const parensCount = titles.filter((t) => /\(.*\)/.test(t)).length;
+    const noPunctCount = titles.filter((t) => !/[.,!?;:]/.test(t)).length;
+    if (lowercaseCount >= 2) styleNotes.push(`${lowercaseCount}/${n} titles use fully lowercase styling`);
+    if (colonCount >= 2) styleNotes.push(`${colonCount}/${n} use a colon to set up a payoff`);
+    if (parensCount >= 2) styleNotes.push(`${parensCount}/${n} add a parenthetical aside`);
+    if (noPunctCount >= Math.ceil(n * 0.6)) styleNotes.push("Minimal punctuation — clean, scannable style");
+  }
+  return { formulas, styleNotes };
+}
+
+function extractHookClusters(titles: string[]): Array<{ label: string; examples: string[] }> {
+  const defs: Array<{ label: string; test: (t: string) => boolean }> = [
+    { label: "Second-person direct address", test: (t) => /\b(you|your|you'?re|you'?ve|you'?ll)\b/i.test(t) },
+    { label: "Timing / transformation promise", test: (t) => /\b\d+\s*(day|week|month|year|hour|minute)s?\b/i.test(t) || /\bin \d+\b/i.test(t) },
+    { label: "First-person story", test: (t) => /^(how i|why i|what i|i tried|i quit|i spent|i made|i built|i only|i stopped)\b/i.test(t) },
+    { label: "List / countdown", test: (t) => /^\d+\s+(things?|ways?|tips?|reasons?|mistakes?|habits?|steps?)\b/i.test(t) },
+    { label: "Lowercase / casual tone", test: (t) => t === t.toLowerCase() || /^[a-z]/.test(t) },
+  ];
+  return defs
+    .map(({ label, test }) => ({ label, examples: titles.filter(test).slice(0, 2) }))
+    .filter((c) => c.examples.length >= 2)
+    .slice(0, 3);
 }
 
 export function AnalysisContent({
@@ -274,7 +336,7 @@ const YT_TABS: { key: YtTab; label: string }[] = [
 ];
 
 function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshots: ChannelSnapshot[] }) {
-  const { summary, autopsy, isUnread, isScheduled, id, createdAt } = analysis;
+  const { summary, autopsy, commentIntel, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
 
   const [tab, setTab] = useState<YtTab>("live");
@@ -374,6 +436,19 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   }
 
   const periodLabel = period === "weekly" ? "last 7 days" : period === "monthly" ? "last 30 days" : "all time";
+
+  const topDurations = topPerformers.map((v) => parseDurationSeconds(v.duration)).filter((s) => s > 0);
+  const botDurations = bottomPerformers.map((v) => parseDurationSeconds(v.duration)).filter((s) => s > 0);
+  const avgTopSec = topDurations.length ? Math.round(topDurations.reduce((a, b) => a + b, 0) / topDurations.length) : 0;
+  const avgBotSec = botDurations.length ? Math.round(botDurations.reduce((a, b) => a + b, 0) / botDurations.length) : 0;
+  const minTopSec = topDurations.length ? Math.min(...topDurations) : 0;
+  const maxTopSec = topDurations.length ? Math.max(...topDurations) : 0;
+  const minBotSec = botDurations.length ? Math.min(...botDurations) : 0;
+  const maxBotSec = botDurations.length ? Math.max(...botDurations) : 0;
+  const topLengthRange = fmtMins(minTopSec) === fmtMins(maxTopSec) ? fmtMins(avgTopSec) : `${fmtMins(minTopSec)}–${fmtMins(maxTopSec)}`;
+  const botLengthRange = fmtMins(minBotSec) === fmtMins(maxBotSec) ? fmtMins(avgBotSec) : `${fmtMins(minBotSec)}–${fmtMins(maxBotSec)}`;
+  const titleAnalysis = extractTitleFormulas(topPerformers.map((v) => v.title));
+  const hookClusters = extractHookClusters(topPerformers.map((v) => v.title));
 
   return (
     <div className="min-h-full">
@@ -558,6 +633,141 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
       {/* ── Tab: Channel Analysis ── */}
       {tab === "analysis" && (
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
+
+          {/* Success Patterns */}
+          {(autopsy?.topPerformerPattern || topDurations.length > 0 || titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0 || (commentIntel?.themes?.length ?? 0) > 0) && (
+            <Card title="Success Patterns" subtitle="Deeper breakdown of your top-performer data">
+              <div className="space-y-3">
+
+                {autopsy?.topPerformerPattern && (
+                  <div className="bg-[#0d0d0f] rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Winning Hooks</p>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.topPerformerPattern}</p>
+                    {topPerformers.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-[#1a1a1d]">
+                        {hookClusters.length >= 2 ? (
+                          <div className="space-y-3">
+                            {hookClusters.map((cluster) => (
+                              <div key={cluster.label}>
+                                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">{cluster.label}</p>
+                                <div className="space-y-0.5">
+                                  {cluster.examples.map((title, i) => (
+                                    <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{title}&rdquo;</p>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-zinc-600 mb-1.5">Examples from top performers</p>
+                            {topPerformers.slice(0, 5).map((v) => (
+                              <p key={v.id} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(topDurations.length > 0 || titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0) && (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {topDurations.length > 0 && (
+                      <div className="bg-[#0d0d0f] rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Clock className="w-3.5 h-3.5 text-blue-400" />
+                          <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Optimal Length</p>
+                        </div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <p className="text-[10px] text-zinc-600 mb-0.5">Top performers · {topDurations.length} videos</p>
+                            <p className="text-sm font-semibold text-zinc-200">
+                              {topLengthRange}
+                              <span className="text-[11px] font-normal text-zinc-500 ml-1.5">avg {fmtMins(avgTopSec)}</span>
+                            </p>
+                          </div>
+                          {botDurations.length > 0 && (
+                            <div>
+                              <p className="text-[10px] text-zinc-600 mb-0.5">Bottom performers · {botDurations.length} videos</p>
+                              <p className="text-sm text-zinc-400">
+                                {botLengthRange}
+                                <span className="text-[11px] text-zinc-600 ml-1.5">avg {fmtMins(avgBotSec)}</span>
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {(titleAnalysis.formulas.length > 0 || titleAnalysis.styleNotes.length > 0) && (
+                      <div className="bg-[#0d0d0f] rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Type className="w-3.5 h-3.5 text-violet-400" />
+                          <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Title Patterns</p>
+                        </div>
+                        {titleAnalysis.formulas.length > 0 && (
+                          <ul className="space-y-4">
+                            {titleAnalysis.formulas.map((f) => (
+                              <li key={f.formula}>
+                                <div className="flex items-baseline gap-1.5 mb-1.5">
+                                  <span className="text-violet-500 shrink-0 text-[10px]">✓</span>
+                                  <p className="text-xs font-medium text-zinc-200">
+                                    {f.formula}
+                                    <span className="text-zinc-600 font-normal ml-1.5">({f.count}/{topPerformers.length})</span>
+                                  </p>
+                                </div>
+                                <div className="ml-3.5 space-y-0.5">
+                                  {f.examples.map((ex, i) => (
+                                    <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{ex}&rdquo;</p>
+                                  ))}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {titleAnalysis.styleNotes.length > 0 && (
+                          <div className={titleAnalysis.formulas.length > 0 ? "mt-3 pt-3 border-t border-[#1a1a1d]" : ""}>
+                            <ul className="space-y-1">
+                              {titleAnalysis.styleNotes.map((note) => (
+                                <li key={note} className="text-[11px] text-zinc-600 italic">{note}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {commentIntel && commentIntel.themes.length > 0 && (
+                  <div className="bg-[#0d0d0f] rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Layers className="w-3.5 h-3.5 text-teal-400" />
+                      <p className="text-[10px] font-semibold text-teal-400 uppercase tracking-wider">Audience-Validated Topics</p>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
+                      {commentIntel.themes.slice(0, 4).map((theme) => (
+                        <div key={theme.name} className="flex items-start gap-2">
+                          <span className="text-teal-600 shrink-0 mt-0.5">·</span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-zinc-300 leading-snug">{theme.name}</p>
+                            <p className="text-[10px] text-zinc-600">{theme.commentCount} mentions · {theme.sentiment}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </Card>
+          )}
+
+          {/* Channel Autopsy */}
           {autopsy ? (
             <Card title="Channel Autopsy">
               <div className="space-y-4">
