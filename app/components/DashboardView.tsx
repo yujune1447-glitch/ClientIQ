@@ -283,7 +283,6 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
                   rows={[
                     { label: "Subscribers", value: summary ? fmt(summary.channel.subscriberCount) : "—" },
                     { label: "Total views", value: summary ? fmt(summary.channel.totalViews) : "—" },
-                    { label: "Avg CTR", value: summary ? `${summary.averages.ctr}%` : "—" },
                     {
                       label: "Weekly growth",
                       custom: <GrowthPill pct={ytGrowth} />,

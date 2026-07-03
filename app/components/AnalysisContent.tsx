@@ -547,10 +547,6 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                 <p className="text-sm font-bold tabular-nums">{fmt(channel.subscriberCount)}</p>
                 <p className="text-[10px] text-zinc-600">Subscribers</p>
               </div>
-              <div>
-                <p className="text-sm font-bold tabular-nums">{averages.ctr}%</p>
-                <p className="text-[10px] text-zinc-600">Avg CTR</p>
-              </div>
             </div>
           </div>
 
@@ -683,11 +679,21 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
           </div>}
 
           {/* Video Performance */}
-          <Card title="Video Performance">
-            <div className="grid md:grid-cols-2 gap-6">
-              <VideoList label="Top performers" videos={topPerformers} variant="top" />
-              <VideoList label="Lowest performers" videos={bottomPerformers} variant="bottom" />
-            </div>
+          <Card title="Video Performance" subtitle={periodLabel}>
+            {(() => {
+              const pool = period === "alltime"
+                ? { top: topPerformers, bottom: bottomPerformers }
+                : (() => {
+                    const sorted = [...periodVideos].sort((a, b) => b.viewCount - a.viewCount);
+                    return { top: sorted.slice(0, 10), bottom: sorted.slice(-10).reverse() };
+                  })();
+              return (
+                <div className="grid md:grid-cols-2 gap-6">
+                  <VideoList label="Top performers" videos={pool.top} variant="top" />
+                  <VideoList label="Lowest performers" videos={pool.bottom} variant="bottom" />
+                </div>
+              );
+            })()}
           </Card>
         </div>
       )}
@@ -1148,9 +1154,14 @@ function VideoList({
                 <Eye className="w-3 h-3 text-zinc-600" />
                 {fmt(v.viewCount)}
               </div>
-              <p className={`text-[10px] mt-0.5 ${isTop ? "text-emerald-500" : "text-red-500"}`}>
-                Score {v.performanceScore}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5 justify-end">
+                <span className="flex items-center gap-0.5 text-[10px] text-zinc-500">
+                  <ThumbsUp className="w-2.5 h-2.5" />{fmt(v.likeCount)}
+                </span>
+                <span className="flex items-center gap-0.5 text-[10px] text-zinc-500">
+                  <MessageSquare className="w-2.5 h-2.5" />{fmt(v.commentCount)}
+                </span>
+              </div>
             </div>
           </div>
         ))}

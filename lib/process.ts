@@ -37,22 +37,16 @@ export function scoreVideos(
   const avgLikes = videos.reduce((s, v) => s + v.likeCount, 0) / n;
   const avgComments = videos.reduce((s, v) => s + v.commentCount, 0) / n;
 
-  const withCtr = videos.filter((v) => (v.ctr ?? 0) > 0);
   const withRetention = videos.filter((v) => (v.averageViewPercentage ?? 0) > 0);
-  const avgCtr = withCtr.length ? withCtr.reduce((s, v) => s + (v.ctr ?? 0), 0) / withCtr.length : 0;
   const avgRetention = withRetention.length
     ? withRetention.reduce((s, v) => s + (v.averageViewPercentage ?? 0), 0) / withRetention.length
     : 0;
 
   for (const v of videos) {
-    const viewScore = avgViews > 0 ? v.viewCount / avgViews : 0;
-    const ctrScore = avgCtr > 0 ? (v.ctr ?? 0) / avgCtr : 0;
-    const retentionScore = avgRetention > 0 ? (v.averageViewPercentage ?? 0) / avgRetention : 0;
-    v.performanceScore = Math.round((viewScore * 0.5 + ctrScore * 0.3 + retentionScore * 0.2) * 10) / 10;
     v.viewsVsAverage = avgViews > 0 ? Math.round((v.viewCount / avgViews - 1) * 100) : 0;
   }
 
-  const sorted = [...videos].sort((a, b) => b.performanceScore - a.performanceScore);
+  const sorted = [...videos].sort((a, b) => b.viewCount - a.viewCount);
 
   const variance = videos.reduce((s, v) => s + Math.pow(v.viewCount - avgViews, 2), 0) / n;
   const stdDev = Math.sqrt(variance);
@@ -69,7 +63,7 @@ export function scoreVideos(
       views: Math.round(avgViews),
       likes: Math.round(avgLikes),
       comments: Math.round(avgComments),
-      ctr: Math.round(avgCtr * 100) / 100,
+      ctr: 0,
       retentionRate: Math.round(avgRetention * 100) / 100,
     },
     outliers,

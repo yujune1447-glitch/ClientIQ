@@ -87,7 +87,6 @@ export async function getChannelAnalytics(
   onProgress?: (page: number, total: number) => void
 ): Promise<Map<string, VideoAnalytics>> {
   const map = new Map<string, VideoAnalytics>();
-  const metrics = "averageViewDuration,averageViewPercentage,impressions,impressionClickThroughRate";
   let startIndex = 1;
   let page = 0;
 
@@ -96,8 +95,9 @@ export async function getChannelAnalytics(
       ids: "channel==mine",
       startDate: "2005-01-01",
       endDate: new Date().toISOString().slice(0, 10),
-      metrics,
+      metrics: "views,averageViewDuration,averageViewPercentage",
       dimensions: "video",
+      sort: "-views",
       maxResults: "500",
       startIndex: String(startIndex),
     });
@@ -106,11 +106,12 @@ export async function getChannelAnalytics(
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const data = await res.json();
+    if (page === 0) console.log("[getChannelAnalytics] raw response (page 1):", JSON.stringify(data));
     if (!res.ok || !data.rows?.length) break;
 
     page++;
-    for (const [videoId, avgDuration, avgPct, impressions, ctr] of data.rows) {
-      map.set(videoId, { averageViewDuration: avgDuration, averageViewPercentage: avgPct, impressions, ctr });
+    for (const [videoId, , avgDuration, avgPct] of data.rows) {
+      map.set(videoId, { averageViewDuration: avgDuration, averageViewPercentage: avgPct, impressions: 0, ctr: 0 });
     }
 
     onProgress?.(page, map.size);

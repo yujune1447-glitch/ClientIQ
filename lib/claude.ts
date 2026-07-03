@@ -18,7 +18,7 @@ function fmtSecs(s: number) {
 function formatVideo(v: VideoWithScore, i: number) {
   const comments = v.topComments?.slice(0, 3).map((c) => `"${c.slice(0, 80)}"`).join(" | ") ?? "none";
   return `${i + 1}. "${v.title.slice(0, 80)}"
-   Views: ${fmt(v.viewCount)} (${v.viewsVsAverage > 0 ? "+" : ""}${v.viewsVsAverage}% vs avg) | Score: ${v.performanceScore} | CTR: ${v.ctr?.toFixed(2) ?? "N/A"}% | Retention: ${v.averageViewPercentage?.toFixed(1) ?? "N/A"}%
+   Views: ${fmt(v.viewCount)} (${v.viewsVsAverage > 0 ? "+" : ""}${v.viewsVsAverage}% vs avg) | Likes: ${fmt(v.likeCount)} | Comments: ${fmt(v.commentCount)} | Retention: ${v.averageViewPercentage?.toFixed(1) ?? "N/A"}%
    Comments: ${comments}`;
 }
 
@@ -33,7 +33,7 @@ Date range: ${dateRange.from.slice(0, 10)} → ${dateRange.to.slice(0, 10)}
 
 CHANNEL AVERAGES
 Views/video: ${fmt(averages.views)} | Likes/video: ${fmt(averages.likes)} | Comments/video: ${fmt(averages.comments)}
-CTR: ${averages.ctr}% | Retention: ${averages.retentionRate}%
+Retention: ${averages.retentionRate}%
 
 TOP 10 PERFORMING VIDEOS
 ${topPerformers.map(formatVideo).join("\n\n")}
@@ -151,7 +151,7 @@ ${topVideos.map((v, i) => {
 
 const SYSTEM = `You are an expert YouTube content strategist. You receive a creator's full channel intelligence report plus optional niche, Instagram, and TikTok data.
 
-Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "your top 3 videos all had CTR above 8%", "niche median retention is 42%", "your #1 video got 3.2× your average views"). Generic advice is not acceptable.
+Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "niche median retention is 42%", "your #1 video got 3.2× your average views", "your top 3 videos all averaged 2.8× channel avg views"). Generic advice is not acceptable.
 
 Return ONLY a single valid JSON object — no markdown, no explanation:
 
@@ -159,7 +159,7 @@ Return ONLY a single valid JSON object — no markdown, no explanation:
   "brief": {
     "weeklyIdea": "Specific, concrete video concept (not vague) grounded in the intersection of what this channel's data shows works and what the niche data confirms is in demand",
     "titleOptions": [
-      "Title option 1 — use the highest-CTR pattern from this creator's top performers",
+      "Title option 1 — use the highest-performing title pattern from this creator's top videos by views",
       "Title option 2 — use the top-performing title format from the niche data",
       "Title option 3 — curiosity-gap or contrarian angle grounded in audience comment signals"
     ],
@@ -175,15 +175,15 @@ Return ONLY a single valid JSON object — no markdown, no explanation:
     "keyTalkingPoints": ["point 1 with why this angle resonates based on data", "point 2", "point 3", "point 4"],
     "thumbnail": {
       "concept": "Overall visual concept in one sentence — what the viewer sees at a glance",
-      "colours": "Specific colour palette (e.g. 'high-contrast red and white on dark background — your top CTR videos all use this')",
-      "composition": "Layout and framing notes (e.g. 'face takes left 60%, bold 2-word text right — mirrors your #1 CTR video')",
+      "colours": "Specific colour palette (e.g. 'high-contrast red and white on dark background — your top-viewed videos all use this')",
+      "composition": "Layout and framing notes (e.g. 'face takes left 60%, bold 2-word text right — mirrors your #1 video by views')",
       "textOverlay": "Exact text to use on the thumbnail (2–5 words max)",
       "faceExpression": "If relevant: expression/pose direction tied to the emotional hook"
     },
     "dataEvidence": [
       { "claim": "Why this topic", "evidence": "Cite the specific metric, video title, or niche stat that justifies this — e.g. 'Your 3 highest-performing videos all covered X, averaging 2.8× channel average views'" },
       { "claim": "Why this length", "evidence": "Specific data — e.g. 'Your retention drops below 40% after 14 min; niche top quartile is 10–14 min'" },
-      { "claim": "Why this thumbnail approach", "evidence": "Specific data — e.g. 'Your top-CTR video (8.4%) used this exact red/white contrast pattern'" },
+      { "claim": "Why this thumbnail approach", "evidence": "Specific data — e.g. 'Your top 3 videos by views all used this high-contrast red/white pattern'" },
       { "claim": "Why this hook structure", "evidence": "Specific data — e.g. 'Audience comments on your top videos frequently ask about X — this hook addresses that directly'" }
     ]
   },
