@@ -8,6 +8,12 @@ import {
   getChannelAnalytics,
   fetchCommentsParallel,
 } from "@/lib/youtube";
+import {
+  fetchRetentionSubsBatch,
+  fetchTrafficBatch,
+  fetchDemographics,
+} from "@/lib/youtube-analytics";
+import { fetchCaption } from "@/lib/captions";
 import { scoreVideos, buildSummary } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
@@ -225,6 +231,115 @@ export async function GET(request: NextRequest) {
           emit({ event: "comments_progress", done, total });
         });
         emit({ event: "step_done", step: "rank" });
+
+        // ── Extended analytics: retention, subs, traffic, demographics, captions ─
+        emit({ event: "step_start", step: "extended_analytics" });
+        const allVideoIds = scored.scored.map((v) => v.id);
+        const CAPTION_N = parseInt(process.env.CAPTION_N ?? "10");
+        const captionTargetIds = [
+          ...scored.scored.slice(0, CAPTION_N),
+          ...scored.scored.slice(-CAPTION_N).reverse(),
+        ].map((v) => v.id);
+
+        await maybeRefresh();
+
+        const [retentionSubsMap, trafficMap, demographics] = await Promise.all([
+          fetchRetentionSubsBatch(allVideoIds, accessToken),
+          fetchTrafficBatch(allVideoIds, accessToken),
+          fetchDemographics(accessToken),
+        ]);
+
+        // Load existing caption statuses for this channel so we never re-fetch
+        const { data: existingRows } = await supabase
+          .from("video_analytics")
+          .select("video_id, caption_status")
+          .eq("channel_id", conn.channel_id)
+          .eq("user_id", userId);
+        const cachedCaptionStatus = new Map(
+          (existingRows ?? [])
+            .filter((r) => r.caption_status !== null)
+            .map((r) => [r.video_id, r.caption_status as string]),
+        );
+
+        // Fetch captions for uncached targets only (sequential to stay well within quota)
+        const captionResults = new Map<string, { status: string; text: string | null; lang: string | null }>();
+        const captionDebug = { eligible: captionTargetIds.length, alreadyCached: 0, fetched: 0, unavailable: 0, failed: 0 };
+
+        for (const videoId of captionTargetIds) {
+          if (cachedCaptionStatus.has(videoId)) {
+            captionDebug.alreadyCached++;
+            continue;
+          }
+          await maybeRefresh();
+          const result = await fetchCaption(videoId, accessToken);
+          captionResults.set(videoId, result);
+          if (result.status === "fetched") captionDebug.fetched++;
+          else if (result.status === "unavailable") captionDebug.unavailable++;
+          else captionDebug.failed++;
+        }
+
+        // Upsert 1: retention + subs + traffic for all videos (no caption columns — preserves existing)
+        const now = new Date().toISOString();
+        const analyticsRows = allVideoIds
+          .filter((id) => retentionSubsMap.has(id) || trafficMap.has(id))
+          .map((videoId) => {
+            const rs = retentionSubsMap.get(videoId);
+            const tf = trafficMap.get(videoId);
+            return {
+              video_id: videoId,
+              channel_id: conn.channel_id,
+              user_id: userId,
+              ...(rs && { relative_retention: rs.relativeRetention, subs_gained: rs.subsGained, subs_lost: rs.subsLost }),
+              ...(tf && { traffic_sources: tf }),
+              updated_at: now,
+            };
+          });
+
+        for (let i = 0; i < analyticsRows.length; i += 500) {
+          const { error: upsertErr } = await supabase
+            .from("video_analytics")
+            .upsert(analyticsRows.slice(i, i + 500), { onConflict: "video_id,channel_id" });
+          if (upsertErr) console.error("[analyze] video_analytics upsert error:", upsertErr.message);
+        }
+
+        // Upsert 2: caption data for fetched targets (only caption columns)
+        for (const [videoId, result] of captionResults.entries()) {
+          const { error: capErr } = await supabase
+            .from("video_analytics")
+            .upsert(
+              {
+                video_id: videoId,
+                channel_id: conn.channel_id,
+                user_id: userId,
+                caption_status: result.status,
+                caption_text: result.text,
+                caption_lang: result.lang,
+                updated_at: now,
+              },
+              { onConflict: "video_id,channel_id" },
+            );
+          if (capErr) console.error(`[analyze] caption upsert ${videoId}:`, capErr.message);
+        }
+
+        // Upsert demographics
+        if (demographics?.length) {
+          await supabase
+            .from("channel_demographics")
+            .upsert(
+              { channel_id: conn.channel_id, user_id: userId, demographics, fetched_at: now },
+              { onConflict: "channel_id,user_id" },
+            );
+        }
+
+        const analyticsDebugSummary = {
+          totalVideos: allVideoIds.length,
+          retentionSubsFetched: retentionSubsMap.size,
+          trafficFetched: trafficMap.size,
+          demographicsFetched: !!demographics?.length,
+          captions: captionDebug,
+        };
+        console.log("[analyze] Extended analytics:", JSON.stringify(analyticsDebugSummary));
+        emit({ event: "step_done", step: "extended_analytics", analytics: analyticsDebugSummary });
 
         // ── Build summary + store raw + call Claude ───────────────────────
         const summary = buildSummary(scored, commentsMap, channelInfo);
