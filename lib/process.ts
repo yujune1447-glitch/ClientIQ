@@ -1,7 +1,7 @@
 import type {
   RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel,
   SuccessPatterns, TitleCategoryStat, TitleMechanicStat, DurationBucketStat, TldrBullet,
-  HookEntry, HookAnalysis,
+  HookEntry, HookAnalysis, RetentionVideoStat, RetentionAnalysis,
 } from "@/types";
 
 interface ScoredResult {
@@ -308,6 +308,60 @@ export function scoreVideos(
     },
     outliers,
     dateRange: { from: dates[0], to: dates[dates.length - 1] },
+  };
+}
+
+export function computeRetentionAnalysis(
+  topPerformers: VideoWithScore[],
+  bottomPerformers: VideoWithScore[],
+  allScored: VideoWithScore[],
+  relativeRetentionMap: Map<string, number | null>,
+): RetentionAnalysis {
+  const allWithData = allScored.filter((v) => (v.averageViewPercentage ?? 0) > 0);
+  const topWithData = topPerformers.filter((v) => (v.averageViewPercentage ?? 0) > 0);
+  const botWithData = bottomPerformers.filter((v) => (v.averageViewPercentage ?? 0) > 0);
+
+  const channelMedianRetentionPct = Math.round(median(allWithData.map((v) => v.averageViewPercentage ?? 0)) * 10) / 10;
+  const topMedianRetentionPct = Math.round(median(topWithData.map((v) => v.averageViewPercentage ?? 0)) * 10) / 10;
+  const bottomMedianRetentionPct = Math.round(median(botWithData.map((v) => v.averageViewPercentage ?? 0)) * 10) / 10;
+
+  const relValues = [...relativeRetentionMap.values()].filter((v): v is number => v !== null);
+  const relativeRetentionMedian = relValues.length >= 3 ? Math.round(median(relValues) * 1000) / 1000 : null;
+
+  function toStat(v: VideoWithScore): RetentionVideoStat {
+    return {
+      videoId: v.id,
+      title: v.title,
+      views: v.viewCount,
+      avgViewPct: Math.round((v.averageViewPercentage ?? 0) * 10) / 10,
+      avgViewDuration: Math.round(v.averageViewDuration ?? 0),
+      relativeRetention: relativeRetentionMap.get(v.id) ?? null,
+    };
+  }
+
+  const sorted = [...allWithData].sort((a, b) => (b.averageViewPercentage ?? 0) - (a.averageViewPercentage ?? 0));
+  const bestRetainedVid = sorted[0] ?? null;
+  const mostViewedVid = allScored[0] ?? null;
+
+  const bestRetainedVideo = bestRetainedVid ? toStat(bestRetainedVid) : null;
+  const mostViewedVideo = mostViewedVid ? toStat(mostViewedVid) : null;
+
+  const viewsRetentionDiverge =
+    !!(bestRetainedVideo && mostViewedVideo &&
+      bestRetainedVideo.videoId !== mostViewedVideo.videoId &&
+      bestRetainedVideo.avgViewPct - mostViewedVideo.avgViewPct >= 5);
+
+  return {
+    videosWithRetentionData: allWithData.length,
+    totalVideosAnalysed: allScored.length,
+    channelMedianRetentionPct,
+    topMedianRetentionPct,
+    bottomMedianRetentionPct,
+    relativeRetentionMedian,
+    relativeRetentionN: relValues.length,
+    bestRetainedVideo,
+    mostViewedVideo,
+    viewsRetentionDiverge,
   };
 }
 

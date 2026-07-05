@@ -14,7 +14,7 @@ import {
   fetchDemographics,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
-import { scoreVideos, buildSummary, computeHookAnalysis } from "@/lib/process";
+import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
@@ -362,6 +362,15 @@ export async function GET(request: NextRequest) {
             summary.topPerformers,
             summary.bottomPerformers,
             captionDataMap,
+          );
+          const relRetentionMap = new Map<string, number | null>(
+            [...retentionSubsMap.entries()].map(([id, d]) => [id, d.relativeRetention])
+          );
+          summary.successPatterns.retentionAnalysis = computeRetentionAnalysis(
+            summary.topPerformers,
+            summary.bottomPerformers,
+            scored.scored,
+            relRetentionMap,
           );
         }
         console.log("[analyze] Summary built: topPerformers=%d bottomPerformers=%d outliers=%d topCommenters=%d totalVideos=%d",

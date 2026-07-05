@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
+import { RetentionSection } from "@/app/components/RetentionSection";
 import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
@@ -1019,6 +1020,21 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Retention */}
+          {sp?.retentionAnalysis && (
+            <RetentionSection
+              analysis={sp.retentionAnalysis}
+              videoOptions={[
+                ...topPerformers.slice(0, 10).map((v) => ({ id: v.id, title: v.title, views: v.viewCount })),
+                ...(sp.retentionAnalysis.bestRetainedVideo &&
+                    !topPerformers.slice(0, 10).find((v) => v.id === sp.retentionAnalysis!.bestRetainedVideo!.videoId)
+                  ? [{ id: sp.retentionAnalysis.bestRetainedVideo.videoId, title: sp.retentionAnalysis.bestRetainedVideo.title, views: sp.retentionAnalysis.bestRetainedVideo.views }]
+                  : []),
+              ]}
+              onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
+            />
           )}
 
           {/* Winning Hooks */}

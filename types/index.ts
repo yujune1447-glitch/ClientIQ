@@ -69,6 +69,28 @@ export interface DurationBucketStat {
   lowConfidence: boolean;
 }
 
+export interface RetentionVideoStat {
+  videoId: string;
+  title: string;
+  views: number;
+  avgViewPct: number;
+  avgViewDuration: number;
+  relativeRetention: number | null;
+}
+
+export interface RetentionAnalysis {
+  videosWithRetentionData: number;
+  totalVideosAnalysed: number;
+  channelMedianRetentionPct: number;
+  topMedianRetentionPct: number;
+  bottomMedianRetentionPct: number;
+  relativeRetentionMedian: number | null;
+  relativeRetentionN: number;
+  bestRetainedVideo: RetentionVideoStat | null;
+  mostViewedVideo: RetentionVideoStat | null;
+  viewsRetentionDiverge: boolean;
+}
+
 export interface HookEntry {
   videoId: string;
   title: string;
@@ -99,6 +121,7 @@ export interface SuccessPatterns {
   durationBuckets: DurationBucketStat[];
   postingTiming: PostingTimingStat;
   hookAnalysis?: HookAnalysis;
+  retentionAnalysis?: RetentionAnalysis;
 }
 
 export interface ChannelSummary {
