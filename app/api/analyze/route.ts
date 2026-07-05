@@ -14,7 +14,7 @@ import {
   fetchDemographics,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
-import { scoreVideos, buildSummary } from "@/lib/process";
+import { scoreVideos, buildSummary, computeHookAnalysis } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
@@ -341,8 +341,29 @@ export async function GET(request: NextRequest) {
         console.log("[analyze] Extended analytics:", JSON.stringify(analyticsDebugSummary));
         emit({ event: "step_done", step: "extended_analytics", analytics: analyticsDebugSummary });
 
+        // ── Query caption texts for hook analysis (top/bottom performers) ─
+        const performerIds = [
+          ...scored.scored.slice(0, 10).map((v) => v.id),
+          ...scored.scored.slice(-10).map((v) => v.id),
+        ];
+        const { data: captionRows } = await supabase
+          .from("video_analytics")
+          .select("video_id, caption_status, caption_text")
+          .eq("channel_id", conn.channel_id)
+          .in("video_id", performerIds);
+        const captionDataMap = new Map<string, { status: string; text: string | null }>(
+          (captionRows ?? []).map((r) => [r.video_id, { status: r.caption_status ?? "unavailable", text: r.caption_text ?? null }])
+        );
+
         // ── Build summary + store raw + call Claude ───────────────────────
         const summary = buildSummary(scored, commentsMap, channelInfo);
+        if (summary.successPatterns) {
+          summary.successPatterns.hookAnalysis = computeHookAnalysis(
+            summary.topPerformers,
+            summary.bottomPerformers,
+            captionDataMap,
+          );
+        }
         console.log("[analyze] Summary built: topPerformers=%d bottomPerformers=%d outliers=%d topCommenters=%d totalVideos=%d",
           summary.topPerformers.length, summary.bottomPerformers.length, summary.outliers.length,
           summary.topCommenters?.length ?? 0, summary.totalVideosAnalysed);

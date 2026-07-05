@@ -13,7 +13,7 @@ import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
   ChannelSnapshot, InstagramSummary, TikTokSummary, CommentIntelligence,
-  ContentBrief,
+  ContentBrief, HookEntry, HookAnalysis,
 } from "@/types";
 
 export interface AnalysisData {
@@ -512,7 +512,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const hookClusters = extractHookClusters(topPerformers.map((v) => v.title));
   const bottomHookClusters = extractHookClusters(bottomPerformers.map((v) => v.title));
   const sp = summary.successPatterns;
-  const maxDurAvg = sp && sp.durationBuckets.length ? Math.max(...sp.durationBuckets.map((b) => b.avgViews), 1) : 1;
+  const maxDurAvg = sp && sp.durationBuckets.length ? Math.max(...sp.durationBuckets.map((b) => b.medianViews), 1) : 1;
   const maxDayAvg = sp && sp.postingTiming.byDayOfWeek.length ? Math.max(...sp.postingTiming.byDayOfWeek.map((d) => d.avgViews), 1) : 1;
   const maxSlotAvg = sp && sp.postingTiming.byTimeOfDay.length ? Math.max(...sp.postingTiming.byTimeOfDay.map((s) => s.avgViews), 1) : 1;
   const mColor = (m: number) => m >= 1.5 ? "text-emerald-400" : m >= 1.2 ? "text-blue-400" : m < 0.8 ? "text-red-400" : "text-zinc-500";
@@ -623,6 +623,20 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
               />
             </div>
           </Card>
+
+          {/* Estimated Minutes Watched */}
+          {totalWatchHours > 0 && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className="w-4 h-4 text-zinc-600" />
+                <div>
+                  <p className="text-[11px] text-zinc-500 mb-0.5">Estimated Minutes Watched</p>
+                  <p className="text-xl font-bold tabular-nums">{fmt(Math.round(totalWatchHours * 60))} min</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-zinc-700">{periodLabel}</p>
+            </div>
+          )}
 
           {/* Top Content + Recent Comments — hidden on All Time (Video Performance covers it) */}
           {period !== "alltime" && <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -738,7 +752,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
                   <Type className="w-3.5 h-3.5 text-violet-400" />
                   <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Title Categories</p>
-                  <span className="ml-auto text-[10px] text-zinc-600 font-mono">× = avg ÷ channel median</span>
+                  <span className="ml-auto text-[10px] text-zinc-600 font-mono">× = category median ÷ channel median</span>
                 </div>
                 <div className="p-5">
                   <div className="space-y-2">
@@ -747,6 +761,9 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="text-[12px] font-medium text-zinc-300 truncate">{cat.name}</p>
+                            {cat.smallSample && !cat.lowConfidence && (
+                              <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded shrink-0">small sample</span>
+                            )}
                             {cat.lowConfidence && (
                               <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded shrink-0">low confidence</span>
                             )}
@@ -760,7 +777,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="text-right">
                             <p className="text-[10px] text-zinc-600">n={cat.n}</p>
-                            <p className="text-[11px] text-zinc-400">{fmt(cat.avgViews)}</p>
+                            <p className="text-[11px] text-zinc-400">{fmt(cat.medianViews)}</p>
                           </div>
                           <div className={`px-2.5 py-1 rounded-lg border text-sm font-bold tabular-nums ${mBg(cat.viewMultiplier)} ${mColor(cat.viewMultiplier)}`}>
                             {cat.viewMultiplier.toFixed(1)}×
@@ -769,7 +786,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                       </div>
                     ))}
                   </div>
-                  <p className="text-[10px] text-zinc-700 mt-3">Low confidence = fewer than 5 videos in category.</p>
+                  <p className="text-[10px] text-zinc-700 mt-3">× = category median ÷ channel median. Low confidence (dim) = &lt;3 videos. Small sample = &lt;10 videos — treat with caution.</p>
                 </div>
               </div>
             )
@@ -847,12 +864,16 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-[12px] text-zinc-300">{m.label}</p>
+                        {m.smallSample && !m.lowConfidence && (
+                          <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded">small sample</span>
+                        )}
                         {m.lowConfidence && (
                           <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded">low confidence</span>
                         )}
                       </div>
-                      <p className="text-[10px] text-zinc-600 mt-0.5 font-mono">
-                        {m.nWith} with ({fmt(m.avgViewsWith)}) · {m.nWithout} without ({fmt(m.avgViewsWithout)})
+                      <p className="text-[10px] text-zinc-500 mt-0.5 leading-snug">
+                        Titles {m.withPhrase} get <span className="font-semibold">{m.multiplier.toFixed(1)}×</span> the median views of those that don&apos;t
+                        ({fmt(m.medianViewsWith)} vs {fmt(m.medianViewsWithout)} · {m.nWith} vs {m.nWithout} videos)
                       </p>
                     </div>
                     <div className={`px-2.5 py-1 rounded-lg border text-sm font-bold tabular-nums shrink-0 ${mBg(m.multiplier)} ${mColor(m.multiplier)}`}>
@@ -860,7 +881,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                     </div>
                   </div>
                 ))}
-                <p className="text-[10px] text-zinc-700 mt-1">× = avg views with mechanic ÷ avg views without. Low confidence = &lt;5 videos with mechanic.</p>
+                <p className="text-[10px] text-zinc-700 mt-1">× = median views with mechanic ÷ median views without. Low confidence (dim) = &lt;3 videos. Small sample = &lt;10 — treat with caution.</p>
               </div>
             </div>
           )}
@@ -875,19 +896,19 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                   <span className="ml-auto text-[10px] text-zinc-600 font-mono">{sp.totalVideos} videos</span>
                 </div>
                 <div className="p-5 space-y-3">
-                  {[...sp.durationBuckets].sort((a, b) => b.avgViews - a.avgViews).map((b) => (
+                  {[...sp.durationBuckets].sort((a, b) => b.medianViews - a.medianViews).map((b) => (
                     <div key={b.label} className={b.lowConfidence ? "opacity-40" : ""}>
                       <div className="flex items-center gap-3">
                         <span className="text-[11px] text-zinc-400 w-24 shrink-0">{b.label}</span>
                         <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${mBar(b.viewMultiplier)}`}
-                            style={{ width: `${Math.round((b.avgViews / maxDurAvg) * 100)}%` }}
+                            style={{ width: `${Math.round((b.medianViews / maxDurAvg) * 100)}%` }}
                           />
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[10px] text-zinc-600 font-mono w-8">n={b.n}</span>
-                          <span className="text-[11px] text-zinc-400 w-14 text-right tabular-nums">{fmt(b.avgViews)}</span>
+                          <span className="text-[11px] text-zinc-400 w-14 text-right tabular-nums">{fmt(b.medianViews)}</span>
                           <span className={`text-[11px] font-semibold tabular-nums w-10 text-right ${mColor(b.viewMultiplier)}`}>{b.viewMultiplier.toFixed(1)}×</span>
                         </div>
                       </div>
@@ -1001,67 +1022,78 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
           )}
 
           {/* Winning Hooks */}
-          {autopsy?.topPerformerPattern && (
+          {(sp?.hookAnalysis || autopsy?.topPerformerPattern) && (
             <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
                 <Zap className="w-3.5 h-3.5 text-amber-500" />
                 <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Winning Hooks</p>
+                {sp?.hookAnalysis && (
+                  <span className="ml-auto text-[10px] text-zinc-600 font-mono">
+                    from captions · {Math.round(sp.hookAnalysis.captionCoverage * 100)}% coverage
+                  </span>
+                )}
               </div>
               <div className="p-5 space-y-4">
-                <p className="text-xs text-zinc-300 leading-relaxed">{autopsy.topPerformerPattern}</p>
-                {topPerformers.length > 0 && (
-                  <div className="pt-4 border-t border-[#1f1f22]">
-                    <div className="grid sm:grid-cols-2 gap-6">
-                      <div>
-                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers</p>
-                        {hookClusters.length >= 2 ? (
-                          <div className="space-y-4">
-                            {hookClusters.map((cluster) => (
-                              <div key={cluster.label}>
-                                <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
-                                <div className="space-y-1">
-                                  {cluster.examples.map((title, i) => (
-                                    <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{title}&rdquo;</p>
+                {sp?.hookAnalysis ? (
+                  <HookAnalysisView hookAnalysis={sp.hookAnalysis} />
+                ) : (
+                  <>
+                    <p className="text-xs text-zinc-300 leading-relaxed">{autopsy?.topPerformerPattern}</p>
+                    {topPerformers.length > 0 && (
+                      <div className="pt-4 border-t border-[#1f1f22]">
+                        <div className="grid sm:grid-cols-2 gap-6">
+                          <div>
+                            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers</p>
+                            {hookClusters.length >= 2 ? (
+                              <div className="space-y-4">
+                                {hookClusters.map((cluster) => (
+                                  <div key={cluster.label}>
+                                    <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
+                                    <div className="space-y-1">
+                                      {cluster.examples.map((title, i) => (
+                                        <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{title}&rdquo;</p>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                {topPerformers.slice(0, 8).map((v) => (
+                                  <p key={v.id} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {bottomPerformers.length > 0 && (
+                            <div>
+                              <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers</p>
+                              {bottomHookClusters.length >= 2 ? (
+                                <div className="space-y-4">
+                                  {bottomHookClusters.map((cluster) => (
+                                    <div key={cluster.label}>
+                                      <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
+                                      <div className="space-y-1">
+                                        {cluster.examples.map((title, i) => (
+                                          <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{title}&rdquo;</p>
+                                        ))}
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {topPerformers.slice(0, 8).map((v) => (
-                              <p key={v.id} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {bottomPerformers.length > 0 && (
-                        <div>
-                          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers</p>
-                          {bottomHookClusters.length >= 2 ? (
-                            <div className="space-y-4">
-                              {bottomHookClusters.map((cluster) => (
-                                <div key={cluster.label}>
-                                  <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">{cluster.label}</p>
-                                  <div className="space-y-1">
-                                    {cluster.examples.map((title, i) => (
-                                      <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{title}&rdquo;</p>
-                                    ))}
-                                  </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {bottomPerformers.slice(0, 8).map((v) => (
+                                    <p key={v.id} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              {bottomPerformers.slice(0, 8).map((v) => (
-                                <p key={v.id} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{v.title}&rdquo;</p>
-                              ))}
+                              )}
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1302,6 +1334,65 @@ function StatBlock({
       ) : sub ? (
         <p className="text-[10px] text-zinc-600 mt-1.5 leading-tight">{sub}</p>
       ) : null}
+    </div>
+  );
+}
+
+const HOOK_TYPE_LABEL: Record<HookEntry["hookType"], string> = {
+  "cold-open-story": "Cold-open story",
+  "bold-claim": "Bold claim",
+  "question": "Question",
+  "direct-address": "Direct address",
+  "other": "Other",
+};
+
+function HookAnalysisView({ hookAnalysis }: { hookAnalysis: HookAnalysis }) {
+  if (!hookAnalysis.hasEnoughData) {
+    return (
+      <p className="text-xs text-zinc-500 leading-relaxed">
+        Caption coverage too thin for hook analysis ({Math.round(hookAnalysis.captionCoverage * 100)}% of top/bottom performers have captions fetched).
+        Re-run analysis after more videos are transcribed, or captions become available.
+      </p>
+    );
+  }
+  return (
+    <div className="grid sm:grid-cols-2 gap-6">
+      <div>
+        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Top performers · spoken hook</p>
+        <div className="space-y-3">
+          {hookAnalysis.topHooks.map((hook) => (
+            <div key={hook.videoId}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded font-medium">
+                  {HOOK_TYPE_LABEL[hook.hookType]}
+                </span>
+                <span className="text-[10px] text-zinc-700 tabular-nums">{fmt(hook.views)}</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 italic leading-snug">&ldquo;{hook.hookText}&rdquo;</p>
+              <p className="text-[10px] text-zinc-700 truncate mt-0.5">{hook.title}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      {hookAnalysis.bottomHooks.length > 0 && (
+        <div>
+          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Bottom performers · spoken hook</p>
+          <div className="space-y-3">
+            {hookAnalysis.bottomHooks.map((hook) => (
+              <div key={hook.videoId}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-[9px] text-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 rounded font-medium">
+                    {HOOK_TYPE_LABEL[hook.hookType]}
+                  </span>
+                  <span className="text-[10px] text-zinc-700 tabular-nums">{fmt(hook.views)}</span>
+                </div>
+                <p className="text-[11px] text-zinc-600 italic leading-snug">&ldquo;{hook.hookText}&rdquo;</p>
+                <p className="text-[10px] text-zinc-700 truncate mt-0.5">{hook.title}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

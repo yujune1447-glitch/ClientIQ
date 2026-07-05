@@ -39,20 +39,23 @@ export interface TitleCategoryStat {
   key: string;
   name: string;
   n: number;
-  avgViews: number;
+  medianViews: number;
   viewMultiplier: number;
   lowConfidence: boolean;
+  smallSample: boolean;
   exampleTitles: string[];
 }
 
 export interface TitleMechanicStat {
   label: string;
+  withPhrase: string;
   nWith: number;
   nWithout: number;
-  avgViewsWith: number;
-  avgViewsWithout: number;
+  medianViewsWith: number;
+  medianViewsWithout: number;
   multiplier: number;
   lowConfidence: boolean;
+  smallSample: boolean;
 }
 
 export interface DurationBucketStat {
@@ -60,10 +63,25 @@ export interface DurationBucketStat {
   minSec: number;
   maxSec: number;
   n: number;
-  avgViews: number;
+  medianViews: number;
   viewMultiplier: number;
   topPerformerCount: number;
   lowConfidence: boolean;
+}
+
+export interface HookEntry {
+  videoId: string;
+  title: string;
+  views: number;
+  hookType: "cold-open-story" | "bold-claim" | "question" | "direct-address" | "other";
+  hookText: string;
+}
+
+export interface HookAnalysis {
+  topHooks: HookEntry[];
+  bottomHooks: HookEntry[];
+  captionCoverage: number;
+  hasEnoughData: boolean;
 }
 
 export interface PostingTimingStat {
@@ -80,6 +98,7 @@ export interface SuccessPatterns {
   titleMechanics: TitleMechanicStat[];
   durationBuckets: DurationBucketStat[];
   postingTiming: PostingTimingStat;
+  hookAnalysis?: HookAnalysis;
 }
 
 export interface ChannelSummary {

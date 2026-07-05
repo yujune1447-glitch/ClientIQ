@@ -1,6 +1,7 @@
 import type {
   RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel,
   SuccessPatterns, TitleCategoryStat, TitleMechanicStat, DurationBucketStat, TldrBullet,
+  HookEntry, HookAnalysis,
 } from "@/types";
 
 interface ScoredResult {
@@ -89,40 +90,43 @@ export function computeSuccessPatterns(
   const titleCategories: TitleCategoryStat[] = TITLE_CATEGORY_DEFS.map(({ key, name, test }) => {
     const matching = scored.filter((v) => test(v.title));
     const n = matching.length;
-    const avg = avgViews(matching);
+    const med = median(matching.map((v) => v.viewCount));
     return {
       key,
       name,
       n,
-      avgViews: Math.round(avg),
-      viewMultiplier: channelMedianViews > 0 ? Math.round((avg / channelMedianViews) * 10) / 10 : 0,
-      lowConfidence: n < 5,
+      medianViews: Math.round(med),
+      viewMultiplier: channelMedianViews > 0 ? Math.round((med / channelMedianViews) * 10) / 10 : 0,
+      lowConfidence: n < 3,
+      smallSample: n < 10,
       exampleTitles: matching.slice(0, 5).map((v) => v.title),
     };
   }).filter((c) => c.n > 0);
 
   // ── 2. Title mechanics ────────────────────────────────────────────────────
-  const mechanicDefs: Array<{ label: string; test: (t: string) => boolean }> = [
-    { label: "Contains a number",     test: (t) => /\d/.test(t) },
-    { label: 'Includes "you" / "your"', test: (t) => /\byou\b|\byour\b/i.test(t) },
-    { label: "Ends with a question",  test: (t) => /\?\s*$/.test(t.trim()) },
-    { label: "Short title (≤6 words)", test: (t) => t.trim().split(/\s+/).length <= 6 },
-    { label: "Long title (≥12 words)", test: (t) => t.trim().split(/\s+/).length >= 12 },
+  const mechanicDefs: Array<{ label: string; withPhrase: string; test: (t: string) => boolean }> = [
+    { label: "Contains a number",      withPhrase: "containing a number",    test: (t) => /\d/.test(t) },
+    { label: 'Includes "you"/"your"',  withPhrase: "including 'you'/'your'", test: (t) => /\byou\b|\byour\b/i.test(t) },
+    { label: "Ends with a question",   withPhrase: "ending with a question", test: (t) => /\?\s*$/.test(t.trim()) },
+    { label: "Short title (≤6 words)", withPhrase: "short (≤6 words)",       test: (t) => t.trim().split(/\s+/).length <= 6 },
+    { label: "Long title (≥12 words)", withPhrase: "long (≥12 words)",       test: (t) => t.trim().split(/\s+/).length >= 12 },
   ];
 
-  const titleMechanics: TitleMechanicStat[] = mechanicDefs.map(({ label, test }) => {
+  const titleMechanics: TitleMechanicStat[] = mechanicDefs.map(({ label, withPhrase, test }) => {
     const withVids = scored.filter((v) => test(v.title));
     const withoutVids = scored.filter((v) => !test(v.title));
-    const avgWith = avgViews(withVids);
-    const avgWithout = avgViews(withoutVids);
+    const medWith = median(withVids.map((v) => v.viewCount));
+    const medWithout = median(withoutVids.map((v) => v.viewCount));
     return {
       label,
+      withPhrase,
       nWith: withVids.length,
       nWithout: withoutVids.length,
-      avgViewsWith: Math.round(avgWith),
-      avgViewsWithout: Math.round(avgWithout),
-      multiplier: avgWithout > 0 ? Math.round((avgWith / avgWithout) * 10) / 10 : 0,
-      lowConfidence: withVids.length < 5,
+      medianViewsWith: Math.round(medWith),
+      medianViewsWithout: Math.round(medWithout),
+      multiplier: medWithout > 0 ? Math.round((medWith / medWithout) * 10) / 10 : 0,
+      lowConfidence: withVids.length < 3,
+      smallSample: withVids.length < 10,
     };
   });
 
@@ -133,16 +137,16 @@ export function computeSuccessPatterns(
       const s = parseDurSec(v.duration);
       return s >= minSec && s <= maxSec;
     });
-    const avg = avgViews(bucket);
+    const med = median(bucket.map((v) => v.viewCount));
     return {
       label,
       minSec,
       maxSec,
       n: bucket.length,
-      avgViews: Math.round(avg),
-      viewMultiplier: channelMedianViews > 0 ? Math.round((avg / channelMedianViews) * 10) / 10 : 0,
+      medianViews: Math.round(med),
+      viewMultiplier: channelMedianViews > 0 ? Math.round((med / channelMedianViews) * 10) / 10 : 0,
       topPerformerCount: bucket.filter((v) => topIds.has(v.id)).length,
-      lowConfidence: bucket.length < 5,
+      lowConfidence: bucket.length < 3,
     };
   }).filter((b) => b.n > 0);
 
@@ -189,12 +193,12 @@ export function computeSuccessPatterns(
 
   // Best title category
   const bestCat = [...titleCategories]
-    .filter((c) => !c.lowConfidence)
+    .filter((c) => !c.lowConfidence && !c.smallSample)
     .sort((a, b) => b.viewMultiplier - a.viewMultiplier)[0];
   if (bestCat && bestCat.viewMultiplier >= 1.2) {
     tldr.push({
-      text: `${bestCat.name} titles average ${fmtMultiplier(bestCat.viewMultiplier)} your channel median`,
-      evidence: `n=${bestCat.n}, ${fmt(bestCat.avgViews)} avg views`,
+      text: `${bestCat.name} titles get ${fmtMultiplier(bestCat.viewMultiplier)} the channel median views`,
+      evidence: `n=${bestCat.n}, ${fmt(bestCat.medianViews)} median views`,
     });
   }
 
@@ -205,19 +209,19 @@ export function computeSuccessPatterns(
   if (bestBucket && bestBucket.viewMultiplier >= 1.2) {
     tldr.push({
       text: `${bestBucket.label} videos are your sweet spot — ${fmtMultiplier(bestBucket.viewMultiplier)} median views`,
-      evidence: `n=${bestBucket.n}, ${fmt(bestBucket.avgViews)} avg views`,
+      evidence: `n=${bestBucket.n}, ${fmt(bestBucket.medianViews)} median views`,
     });
   }
 
   // Best title mechanic
   const bestMechanic = [...titleMechanics]
-    .filter((m) => !m.lowConfidence && m.multiplier >= 1.1)
+    .filter((m) => !m.lowConfidence && !m.smallSample && m.multiplier >= 1.1)
     .sort((a, b) => b.multiplier - a.multiplier)[0];
   if (bestMechanic) {
     const pct = Math.round((bestMechanic.multiplier - 1) * 100);
     tldr.push({
-      text: `Titles that ${bestMechanic.label.toLowerCase()} outperform by ${pct}%`,
-      evidence: `n=${bestMechanic.nWith} with vs ${bestMechanic.nWithout} without`,
+      text: `Titles ${bestMechanic.withPhrase} get ${pct}% more median views`,
+      evidence: `${bestMechanic.nWith} with (${fmt(bestMechanic.medianViewsWith)}) vs ${bestMechanic.nWithout} without (${fmt(bestMechanic.medianViewsWithout)})`,
     });
   }
 
@@ -305,6 +309,38 @@ export function scoreVideos(
     outliers,
     dateRange: { from: dates[0], to: dates[dates.length - 1] },
   };
+}
+
+export function computeHookAnalysis(
+  topPerformers: VideoWithScore[],
+  bottomPerformers: VideoWithScore[],
+  captionData: Map<string, { status: string; text: string | null }>,
+): HookAnalysis {
+  function categorize(text: string): HookEntry["hookType"] {
+    const t = text.trim();
+    if (/^(you |if you |are you |do you |have you |picture |imagine )/i.test(t)) return "direct-address";
+    if (/\?/.test(t) || /^(what if |why |how |when |can you )/i.test(t)) return "question";
+    if (/^(most |nobody |stop |forget |the truth|warning|this is why|what nobody|the problem|here'?s why)/i.test(t)) return "bold-claim";
+    if (/^(i |my |our |we |last |today i |so i |it was |there was )/i.test(t)) return "cold-open-story";
+    return "other";
+  }
+
+  function toEntry(v: VideoWithScore): HookEntry | null {
+    const cap = captionData.get(v.id);
+    if (!cap || cap.status !== "fetched" || !cap.text) return null;
+    const snippet = cap.text.slice(0, 150).trim();
+    if (!snippet) return null;
+    return { videoId: v.id, title: v.title, views: v.viewCount, hookType: categorize(snippet), hookText: snippet };
+  }
+
+  const all = [...topPerformers, ...bottomPerformers];
+  const withCaptions = all.filter((v) => captionData.get(v.id)?.status === "fetched").length;
+  const captionCoverage = all.length > 0 ? withCaptions / all.length : 0;
+
+  const topHooks = topPerformers.map(toEntry).filter((e): e is HookEntry => e !== null);
+  const bottomHooks = bottomPerformers.map(toEntry).filter((e): e is HookEntry => e !== null);
+
+  return { topHooks, bottomHooks, captionCoverage, hasEnoughData: topHooks.length >= 3 };
 }
 
 export function buildSummary(
