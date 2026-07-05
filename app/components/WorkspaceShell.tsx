@@ -280,7 +280,7 @@ export default function WorkspaceShell({
         <div className="border-b border-[#1f1f22] px-6 py-4">
           <p className="text-sm font-semibold">Saved Ideas</p>
         </div>
-        <SavedIdeasBoard />
+        <SavedIdeasBoard onOpenChat={(p) => openAccountWithNewChat(p as AccountType)} />
       </div>
     );
   } else if (mainView === "youtube") {
