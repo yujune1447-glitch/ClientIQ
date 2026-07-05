@@ -30,6 +30,58 @@ export interface VideoWithScore extends YouTubeVideo {
   topCommentAuthors?: string[];
 }
 
+export interface TldrBullet {
+  text: string;
+  evidence: string;
+}
+
+export interface TitleCategoryStat {
+  key: string;
+  name: string;
+  n: number;
+  avgViews: number;
+  viewMultiplier: number;
+  lowConfidence: boolean;
+  exampleTitles: string[];
+}
+
+export interface TitleMechanicStat {
+  label: string;
+  nWith: number;
+  nWithout: number;
+  avgViewsWith: number;
+  avgViewsWithout: number;
+  multiplier: number;
+  lowConfidence: boolean;
+}
+
+export interface DurationBucketStat {
+  label: string;
+  minSec: number;
+  maxSec: number;
+  n: number;
+  avgViews: number;
+  viewMultiplier: number;
+  topPerformerCount: number;
+  lowConfidence: boolean;
+}
+
+export interface PostingTimingStat {
+  lowConfidence: boolean;
+  byDayOfWeek: { day: string; n: number; avgViews: number }[];
+  byTimeOfDay: { slot: string; n: number; avgViews: number }[];
+}
+
+export interface SuccessPatterns {
+  channelMedianViews: number;
+  totalVideos: number;
+  tldr: TldrBullet[];
+  titleCategories: TitleCategoryStat[];
+  titleMechanics: TitleMechanicStat[];
+  durationBuckets: DurationBucketStat[];
+  postingTiming: PostingTimingStat;
+}
+
 export interface ChannelSummary {
   channel: YouTubeChannel;
   averages: {
@@ -46,6 +98,7 @@ export interface ChannelSummary {
   totalVideosAnalysed: number;
   dateRange: { from: string; to: string };
   topCommenters?: { author: string; count: number }[];
+  successPatterns?: SuccessPatterns;
 }
 
 export interface RawVideo {

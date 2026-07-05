@@ -34,6 +34,13 @@ YouTube Studio + Meta Business Suite + TikTok Studio unified into one dashboard,
 - Instagram Graph API
 - TikTok for Developers API
 
+## Environment variables
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — Supabase project
+- `ANTHROPIC_API_KEY` — Claude API
+- `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` / `YOUTUBE_REDIRECT_URI` — Google Cloud Console OAuth client
+- `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` / `TIKTOK_REDIRECT_URI` — TikTok Developer Portal, app: ContentCreatorIQ
+- `NEXT_PUBLIC_APP_URL` — full origin (e.g. `https://client-iq-tawny.vercel.app`); used for OAuth redirect construction and post-auth redirects
+
 ## Current status (update this section as you go)
 - YouTube OAuth working, persistent login via refresh tokens
 - Full channel data pull with pagination
@@ -81,3 +88,26 @@ YouTube Studio + Meta Business Suite + TikTok Studio unified into one dashboard,
 - Keep JS pre-processing layer decoupled from Claude API calls so platforms can be added independently
 - Each platform (YouTube/Instagram/TikTok) should follow the same data contract into the analysis layer so Tab 1/2/3 UI components stay platform-agnostic
 - Favor server components for data fetching, client components only where interactivity is required (AI panel, Kanban board, modals)
+
+## Workflow rules (added 2026-07-03)
+- Before reporting any task complete, run npm run build yourself and confirm no errors — don't rely on Jake to catch syntax/type errors.
+- Prefer fewer, well-scoped prompts over many small back-and-forth ones for low-risk changes (layout, copy, non-logic UI).
+- Still show a plan first (don't implement blind) for anything touching data logic, API calls, DB schema, or auth.
+- Commit after every verified working step — this is the safety net for fast iteration, don't skip it.
+
+## Current priority order (as of 2026-07-03)
+1. Finish Instagram OAuth (was blocked on Meta Developer app setup)
+2. Connect TikTok at minimal viable level
+3. Cross-platform trend correlation (unlocked once 1-2 are done)
+4. Keep sharpening Planning Content and Success Patterns
+5. Live Stats stays at the simple/lean version already scoped — no further scope additions here without explicit sign-off
+
+## Competitive context (why this order)
+Project 6's defensible wedge is structured AI content briefs + idea pipeline — no competitor (TubeBuddy, VidIQ, Metricool, Hootsuite) does this well. VidIQ is the nearest threat and most likely to expand into cross-platform structured briefs. Live Stats/analytics is competitive parity at best, not a differentiator — don't over-invest there.
+
+## Banked future moat ideas (not being built yet, for later)
+- Feedback loop: track whether saved ideas actually got made and how they performed, feed back into AI recommendations
+- Creator profile that deepens with use (voice, audience, history) — personalization moat, hard to cold-start elsewhere
+- Aggregate cross-creator trend intelligence once user volume exists — network effect, nobody else can claim this
+- Become the operational hub (planning + calendar), not just ideation — raises switching cost
+- Jake documenting the build journey publicly — community/trust moat competitors can't replicate

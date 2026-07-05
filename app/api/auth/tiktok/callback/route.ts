@@ -8,14 +8,25 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
+  const stateParam = searchParams.get("state");
+  const stateCookie = request.cookies.get("tt_oauth_state")?.value;
+
+  const clearState = (res: NextResponse) => {
+    res.cookies.set("tt_oauth_state", "", { maxAge: 0, path: "/" });
+    return res;
+  };
+
+  if (!stateCookie || stateParam !== stateCookie) {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=state_mismatch`));
+  }
 
   if (!code || error) {
-    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=oauth_denied`);
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=oauth_denied`));
   }
 
   const userId = request.cookies.get("user_id")?.value;
   if (!userId) {
-    return NextResponse.redirect(`${APP_URL}/?error=not_authenticated`);
+    return clearState(NextResponse.redirect(`${APP_URL}/?error=not_authenticated`));
   }
 
   const tokenRes = await fetch(`${TIKTOK_API}/oauth/token/`, {
@@ -31,35 +42,35 @@ export async function GET(request: NextRequest) {
   });
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`);
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`));
   }
 
   const tokenData = await tokenRes.json();
-  if (tokenData.error && tokenData.error !== "ok") {
-    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`);
+  if (tokenData.error) {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`));
   }
 
   const { access_token, refresh_token, expires_in, refresh_expires_in, open_id } = tokenData;
 
   const userRes = await fetch(
-    `${TIKTOK_API}/user/info/?fields=open_id,union_id,avatar_url,display_name,username,follower_count,following_count,likes_count,video_count`,
+    `${TIKTOK_API}/user/info/?fields=open_id,union_id,avatar_url,display_name,follower_count,following_count,likes_count,video_count`,
     { headers: { Authorization: `Bearer ${access_token}` } }
   );
 
   if (!userRes.ok) {
-    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`);
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
   }
 
   const userData = await userRes.json();
   const user = userData.data?.user;
 
   if (!user) {
-    return NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`);
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
   }
 
   const supabase = createAdminClient();
 
-  await supabase.from("tiktok_connections").upsert(
+  const { error: connError } = await supabase.from("tiktok_connections").upsert(
     {
       user_id: userId,
       open_id: open_id ?? user.open_id,
@@ -81,5 +92,9 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id" }
   );
 
-  return NextResponse.redirect(`${APP_URL}/workspace`);
+  if (connError) {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=db_error`));
+  }
+
+  return clearState(NextResponse.redirect(`${APP_URL}/workspace`));
 }
