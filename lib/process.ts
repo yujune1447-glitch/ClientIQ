@@ -1,10 +1,246 @@
-import type { RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel } from "@/types";
+import type {
+  RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel,
+  SuccessPatterns, TitleCategoryStat, TitleMechanicStat, DurationBucketStat, TldrBullet,
+} from "@/types";
 
 interface ScoredResult {
   scored: VideoWithScore[];
   averages: ChannelSummary["averages"];
   outliers: VideoWithScore[];
   dateRange: { from: string; to: string };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function avgViews(videos: VideoWithScore[]): number {
+  if (!videos.length) return 0;
+  return videos.reduce((s, v) => s + v.viewCount, 0) / videos.length;
+}
+
+function parseDurSec(iso: string): number {
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] ?? "0") * 3600) + (parseInt(m[2] ?? "0") * 60) + parseInt(m[3] ?? "0");
+}
+
+const TITLE_CATEGORY_DEFS: Array<{
+  key: string; name: string; test: (t: string) => boolean;
+}> = [
+  {
+    key: "reassurance",
+    name: "Reassurance / Permission-giving",
+    test: (t) => /\b(you don'?t have to|it'?s (ok|okay)\b|you'?re allowed|give yourself|be gentle|you are enough|take a (deep )?breath|no pressure|let yourself|not your fault|you don'?t need to|stop (feeling|worrying|pushing)|allow yourself)\b/i.test(t),
+  },
+  {
+    key: "timing",
+    name: "Timing / Destiny framing",
+    test: (t) => /\b(when the time|when you need|meant to (find|see|hear|watch)|right time|divine timing|trust the process|found this for a reason|not a coincidence|exactly where you|where you'?re? meant)\b/i.test(t),
+  },
+  {
+    key: "personal-journey",
+    name: "Personal journey / First-person",
+    test: (t) => /^(how i|why i|what i|i tried|i quit|i spent|i made|i built|i only|i stopped|i started|i learned|i realized|i chose|i left|i moved|i went|i found|i lost|i used|i switched)\b/i.test(t),
+  },
+  {
+    key: "question",
+    name: "Question / Curiosity gap",
+    test: (t) => /\?\s*$/.test(t.trim()),
+  },
+  {
+    key: "list",
+    name: "List / Countdown",
+    test: (t) => /^\d+\s+\w/i.test(t),
+  },
+];
+
+const DURATION_BUCKETS: Array<{ label: string; minSec: number; maxSec: number }> = [
+  { label: "Under 3 min",  minSec: 0,    maxSec: 179  },
+  { label: "3 – 7 min",    minSec: 180,  maxSec: 419  },
+  { label: "7 – 12 min",   minSec: 420,  maxSec: 719  },
+  { label: "12 – 20 min",  minSec: 720,  maxSec: 1199 },
+  { label: "Over 20 min",  minSec: 1200, maxSec: Infinity },
+];
+
+function fmtMultiplier(x: number): string {
+  return `${x.toFixed(1)}×`;
+}
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+export function computeSuccessPatterns(
+  scored: VideoWithScore[],
+  topPerformers: VideoWithScore[],
+): SuccessPatterns {
+  const total = scored.length;
+  const channelMedianViews = median(scored.map((v) => v.viewCount));
+
+  // ── 1. Title categories ───────────────────────────────────────────────────
+  const titleCategories: TitleCategoryStat[] = TITLE_CATEGORY_DEFS.map(({ key, name, test }) => {
+    const matching = scored.filter((v) => test(v.title));
+    const n = matching.length;
+    const avg = avgViews(matching);
+    return {
+      key,
+      name,
+      n,
+      avgViews: Math.round(avg),
+      viewMultiplier: channelMedianViews > 0 ? Math.round((avg / channelMedianViews) * 10) / 10 : 0,
+      lowConfidence: n < 5,
+      exampleTitles: matching.slice(0, 5).map((v) => v.title),
+    };
+  }).filter((c) => c.n > 0);
+
+  // ── 2. Title mechanics ────────────────────────────────────────────────────
+  const mechanicDefs: Array<{ label: string; test: (t: string) => boolean }> = [
+    { label: "Contains a number",     test: (t) => /\d/.test(t) },
+    { label: 'Includes "you" / "your"', test: (t) => /\byou\b|\byour\b/i.test(t) },
+    { label: "Ends with a question",  test: (t) => /\?\s*$/.test(t.trim()) },
+    { label: "Short title (≤6 words)", test: (t) => t.trim().split(/\s+/).length <= 6 },
+    { label: "Long title (≥12 words)", test: (t) => t.trim().split(/\s+/).length >= 12 },
+  ];
+
+  const titleMechanics: TitleMechanicStat[] = mechanicDefs.map(({ label, test }) => {
+    const withVids = scored.filter((v) => test(v.title));
+    const withoutVids = scored.filter((v) => !test(v.title));
+    const avgWith = avgViews(withVids);
+    const avgWithout = avgViews(withoutVids);
+    return {
+      label,
+      nWith: withVids.length,
+      nWithout: withoutVids.length,
+      avgViewsWith: Math.round(avgWith),
+      avgViewsWithout: Math.round(avgWithout),
+      multiplier: avgWithout > 0 ? Math.round((avgWith / avgWithout) * 10) / 10 : 0,
+      lowConfidence: withVids.length < 5,
+    };
+  });
+
+  // ── 3. Duration buckets ───────────────────────────────────────────────────
+  const topIds = new Set(topPerformers.map((v) => v.id));
+  const durationBuckets: DurationBucketStat[] = DURATION_BUCKETS.map(({ label, minSec, maxSec }) => {
+    const bucket = scored.filter((v) => {
+      const s = parseDurSec(v.duration);
+      return s >= minSec && s <= maxSec;
+    });
+    const avg = avgViews(bucket);
+    return {
+      label,
+      minSec,
+      maxSec,
+      n: bucket.length,
+      avgViews: Math.round(avg),
+      viewMultiplier: channelMedianViews > 0 ? Math.round((avg / channelMedianViews) * 10) / 10 : 0,
+      topPerformerCount: bucket.filter((v) => topIds.has(v.id)).length,
+      lowConfidence: bucket.length < 5,
+    };
+  }).filter((b) => b.n > 0);
+
+  // ── 4. Posting timing ─────────────────────────────────────────────────────
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayGroups = new Map<number, VideoWithScore[]>();
+  const slotGroups = new Map<string, VideoWithScore[]>();
+  const SLOTS: Array<{ label: string; start: number; end: number }> = [
+    { label: "Morning (6–12)",   start: 6,  end: 12 },
+    { label: "Afternoon (12–18)", start: 12, end: 18 },
+    { label: "Evening (18–24)",  start: 18, end: 24 },
+    { label: "Night (0–6)",      start: 0,  end: 6  },
+  ];
+
+  for (const v of scored) {
+    const d = new Date(v.publishedAt);
+    const day = d.getUTCDay();
+    const hour = d.getUTCHours();
+    if (!dayGroups.has(day)) dayGroups.set(day, []);
+    dayGroups.get(day)!.push(v);
+    const slot = SLOTS.find((s) => hour >= s.start && hour < s.end)?.label ?? "Night (0–6)";
+    if (!slotGroups.has(slot)) slotGroups.set(slot, []);
+    slotGroups.get(slot)!.push(v);
+  }
+
+  const byDayOfWeek = DAYS.map((day, i) => {
+    const group = dayGroups.get(i) ?? [];
+    return { day, n: group.length, avgViews: Math.round(avgViews(group)) };
+  }).filter((d) => d.n > 0);
+
+  const byTimeOfDay = SLOTS.map(({ label }) => {
+    const group = slotGroups.get(label) ?? [];
+    return { slot: label, n: group.length, avgViews: Math.round(avgViews(group)) };
+  }).filter((s) => s.n > 0);
+
+  const postingTiming = {
+    lowConfidence: total < 20,
+    byDayOfWeek,
+    byTimeOfDay,
+  };
+
+  // ── 5. TL;DR bullets ─────────────────────────────────────────────────────
+  const tldr: TldrBullet[] = [];
+
+  // Best title category
+  const bestCat = [...titleCategories]
+    .filter((c) => !c.lowConfidence)
+    .sort((a, b) => b.viewMultiplier - a.viewMultiplier)[0];
+  if (bestCat && bestCat.viewMultiplier >= 1.2) {
+    tldr.push({
+      text: `${bestCat.name} titles average ${fmtMultiplier(bestCat.viewMultiplier)} your channel median`,
+      evidence: `n=${bestCat.n}, ${fmt(bestCat.avgViews)} avg views`,
+    });
+  }
+
+  // Best duration bucket
+  const bestBucket = [...durationBuckets]
+    .filter((b) => !b.lowConfidence)
+    .sort((a, b) => b.viewMultiplier - a.viewMultiplier)[0];
+  if (bestBucket && bestBucket.viewMultiplier >= 1.2) {
+    tldr.push({
+      text: `${bestBucket.label} videos are your sweet spot — ${fmtMultiplier(bestBucket.viewMultiplier)} median views`,
+      evidence: `n=${bestBucket.n}, ${fmt(bestBucket.avgViews)} avg views`,
+    });
+  }
+
+  // Best title mechanic
+  const bestMechanic = [...titleMechanics]
+    .filter((m) => !m.lowConfidence && m.multiplier >= 1.1)
+    .sort((a, b) => b.multiplier - a.multiplier)[0];
+  if (bestMechanic) {
+    const pct = Math.round((bestMechanic.multiplier - 1) * 100);
+    tldr.push({
+      text: `Titles that ${bestMechanic.label.toLowerCase()} outperform by ${pct}%`,
+      evidence: `n=${bestMechanic.nWith} with vs ${bestMechanic.nWithout} without`,
+    });
+  }
+
+  // Best posting day
+  if (!postingTiming.lowConfidence) {
+    const bestDay = [...byDayOfWeek].filter((d) => d.n >= 5).sort((a, b) => b.avgViews - a.avgViews)[0];
+    if (bestDay) {
+      tldr.push({
+        text: `${bestDay.day} is your strongest publishing day`,
+        evidence: `n=${bestDay.n}, ${fmt(bestDay.avgViews)} avg views`,
+      });
+    }
+  }
+
+  return {
+    channelMedianViews,
+    totalVideos: total,
+    tldr,
+    titleCategories,
+    titleMechanics,
+    durationBuckets,
+    postingTiming,
+  };
 }
 
 export function scoreVideos(
@@ -108,6 +344,8 @@ export function buildSummary(
     .slice(0, 10)
     .map(([author, count]) => ({ author, count }));
 
+  const successPatterns = computeSuccessPatterns(scored, topPerformers);
+
   return {
     channel,
     averages,
@@ -118,5 +356,6 @@ export function buildSummary(
     totalVideosAnalysed: scored.length,
     dateRange,
     topCommenters: topCommenters.length > 0 ? topCommenters : undefined,
+    successPatterns,
   };
 }

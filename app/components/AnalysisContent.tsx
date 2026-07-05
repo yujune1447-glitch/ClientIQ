@@ -5,7 +5,7 @@ import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
   MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
   Loader2, Send, BookmarkPlus, Sparkles, Clock, Type, Zap,
-  User, ListOrdered,
+  User, ListOrdered, Calendar, Hash,
 } from "lucide-react";
 import { MarkRead } from "@/app/components/MarkRead";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
@@ -511,6 +511,13 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const titleCategories = extractTitleCategories(topPerformers.map((v) => v.title), bottomPerformers.map((v) => v.title));
   const hookClusters = extractHookClusters(topPerformers.map((v) => v.title));
   const bottomHookClusters = extractHookClusters(bottomPerformers.map((v) => v.title));
+  const sp = summary.successPatterns;
+  const maxDurAvg = sp && sp.durationBuckets.length ? Math.max(...sp.durationBuckets.map((b) => b.avgViews), 1) : 1;
+  const maxDayAvg = sp && sp.postingTiming.byDayOfWeek.length ? Math.max(...sp.postingTiming.byDayOfWeek.map((d) => d.avgViews), 1) : 1;
+  const maxSlotAvg = sp && sp.postingTiming.byTimeOfDay.length ? Math.max(...sp.postingTiming.byTimeOfDay.map((s) => s.avgViews), 1) : 1;
+  const mColor = (m: number) => m >= 1.5 ? "text-emerald-400" : m >= 1.2 ? "text-blue-400" : m < 0.8 ? "text-red-400" : "text-zinc-500";
+  const mBg = (m: number) => m >= 1.5 ? "bg-emerald-500/10 border-emerald-900/30" : m >= 1.2 ? "bg-blue-500/10 border-blue-900/30" : m < 0.8 ? "bg-red-500/10 border-red-900/30" : "bg-zinc-800/30 border-[#27272a]";
+  const mBar = (m: number) => m >= 1.5 ? "bg-emerald-500" : m >= 1.2 ? "bg-blue-500" : m < 0.8 ? "bg-red-800" : "bg-zinc-600";
 
   return (
     <div className="min-h-full">
@@ -702,64 +709,292 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
       {tab === "analysis" && (
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
 
-          {/* Winning Titles */}
-          {titleCategories.length > 0 && (
+          {/* TL;DR */}
+          {sp && sp.tldr.length > 0 && (
             <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
-                <Type className="w-3.5 h-3.5 text-violet-400" />
-                <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Winning Titles</p>
+                <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
+                <p className="text-[10px] font-semibold text-[#ff3040] uppercase tracking-wider">What Works on Your Channel</p>
+                <span className="ml-auto text-[10px] text-zinc-600 font-mono">{sp.totalVideos} videos · median {fmt(sp.channelMedianViews)}</span>
               </div>
-              <div className="p-5 space-y-4">
-                <p className="text-xs text-zinc-300 leading-relaxed">{buildTitlesInsight(titleCategories, topPerformers.length)}</p>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {titleCategories.map((cat) => {
-                    const accentClass: Record<string, string> = {
-                      rose: "text-rose-400",
-                      amber: "text-amber-400",
-                      blue: "text-blue-400",
-                      violet: "text-violet-400",
-                      teal: "text-teal-400",
-                    };
-                    const borderClass: Record<string, string> = {
-                      rose: "border-rose-900/30",
-                      amber: "border-amber-900/30",
-                      blue: "border-blue-900/30",
-                      violet: "border-violet-900/30",
-                      teal: "border-teal-900/30",
-                    };
-                    const accent = accentClass[cat.color] ?? "text-zinc-400";
-                    const border = borderClass[cat.color] ?? "border-[#1a1a1d]";
-                    return (
-                      <div key={cat.key} className={`bg-[#0d0d0f] border ${border} rounded-lg p-3`}>
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <cat.Icon className={`w-3 h-3 ${accent} shrink-0`} />
-                          <p className={`text-[10px] font-semibold ${accent} uppercase tracking-wider leading-none`}>{cat.name}</p>
-                        </div>
-                        <p className="text-[11px] text-zinc-400 leading-snug mb-1.5">{cat.description}</p>
-                        <p className="text-[10px] text-zinc-600 font-mono mb-2.5 leading-snug">{cat.formula}</p>
-                        <div className="border-t border-[#1a1a1d] pt-2 space-y-1">
-                          <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">Top performers · {cat.examples.length}</p>
-                          {cat.examples.map((ex, i) => (
-                            <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{ex}&rdquo;</p>
-                          ))}
-                        </div>
-                        {bottomPerformers.length > 0 && (
-                          <div className="border-t border-[#1a1a1d] pt-2 mt-2 space-y-1">
-                            <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">
-                              Bottom performers · {cat.bottomExamples.length} {cat.bottomExamples.length === 0 ? "— pattern absent" : ""}
-                            </p>
-                            {cat.bottomExamples.length > 0 ? (
-                              cat.bottomExamples.map((ex, i) => (
-                                <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{ex}&rdquo;</p>
-                              ))
-                            ) : (
-                              <p className="text-[11px] text-zinc-700 italic">Not seen in bottom performers.</p>
+              <div className="p-5 space-y-3">
+                {sp.tldr.map((bullet, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <span className="text-[#ff3040] font-mono text-xs shrink-0 mt-0.5">{i + 1}.</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-zinc-200 leading-snug">{bullet.text}</p>
+                      <p className="text-[10px] text-zinc-600 mt-0.5 font-mono">{bullet.evidence}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Title Categories */}
+          {sp ? (
+            sp.titleCategories.length > 0 && (
+              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                  <Type className="w-3.5 h-3.5 text-violet-400" />
+                  <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Title Categories</p>
+                  <span className="ml-auto text-[10px] text-zinc-600 font-mono">× = avg ÷ channel median</span>
+                </div>
+                <div className="p-5">
+                  <div className="space-y-2">
+                    {[...sp.titleCategories].sort((a, b) => b.viewMultiplier - a.viewMultiplier).map((cat) => (
+                      <div key={cat.key} className="flex items-center gap-3 bg-[#0d0d0f] rounded-lg px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-[12px] font-medium text-zinc-300 truncate">{cat.name}</p>
+                            {cat.lowConfidence && (
+                              <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded shrink-0">low confidence</span>
                             )}
                           </div>
+                          <div className="flex gap-2 flex-wrap">
+                            {cat.exampleTitles.slice(0, 2).map((t, ei) => (
+                              <span key={ei} className="text-[10px] text-zinc-600 italic truncate max-w-[260px]">&ldquo;{t}&rdquo;</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <p className="text-[10px] text-zinc-600">n={cat.n}</p>
+                            <p className="text-[11px] text-zinc-400">{fmt(cat.avgViews)}</p>
+                          </div>
+                          <div className={`px-2.5 py-1 rounded-lg border text-sm font-bold tabular-nums ${mBg(cat.viewMultiplier)} ${mColor(cat.viewMultiplier)}`}>
+                            {cat.viewMultiplier.toFixed(1)}×
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-zinc-700 mt-3">Low confidence = fewer than 5 videos in category.</p>
+                </div>
+              </div>
+            )
+          ) : (
+            titleCategories.length > 0 && (
+              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                  <Type className="w-3.5 h-3.5 text-violet-400" />
+                  <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Winning Titles</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <p className="text-xs text-zinc-300 leading-relaxed">{buildTitlesInsight(titleCategories, topPerformers.length)}</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {titleCategories.map((cat) => {
+                      const accentClass: Record<string, string> = {
+                        rose: "text-rose-400", amber: "text-amber-400", blue: "text-blue-400",
+                        violet: "text-violet-400", teal: "text-teal-400",
+                      };
+                      const borderClass: Record<string, string> = {
+                        rose: "border-rose-900/30", amber: "border-amber-900/30", blue: "border-blue-900/30",
+                        violet: "border-violet-900/30", teal: "border-teal-900/30",
+                      };
+                      const accent = accentClass[cat.color] ?? "text-zinc-400";
+                      const border = borderClass[cat.color] ?? "border-[#1a1a1d]";
+                      return (
+                        <div key={cat.key} className={`bg-[#0d0d0f] border ${border} rounded-lg p-3`}>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <cat.Icon className={`w-3 h-3 ${accent} shrink-0`} />
+                            <p className={`text-[10px] font-semibold ${accent} uppercase tracking-wider leading-none`}>{cat.name}</p>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-snug mb-1.5">{cat.description}</p>
+                          <p className="text-[10px] text-zinc-600 font-mono mb-2.5 leading-snug">{cat.formula}</p>
+                          <div className="border-t border-[#1a1a1d] pt-2 space-y-1">
+                            <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">Top performers · {cat.examples.length}</p>
+                            {cat.examples.map((ex, i) => (
+                              <p key={i} className="text-[11px] text-zinc-500 italic leading-snug">&ldquo;{ex}&rdquo;</p>
+                            ))}
+                          </div>
+                          {bottomPerformers.length > 0 && (
+                            <div className="border-t border-[#1a1a1d] pt-2 mt-2 space-y-1">
+                              <p className="text-[9px] text-zinc-700 uppercase tracking-wider mb-1">
+                                Bottom performers · {cat.bottomExamples.length}{cat.bottomExamples.length === 0 ? " — pattern absent" : ""}
+                              </p>
+                              {cat.bottomExamples.length > 0 ? (
+                                cat.bottomExamples.map((ex, i) => (
+                                  <p key={i} className="text-[11px] text-zinc-700 italic leading-snug">&ldquo;{ex}&rdquo;</p>
+                                ))
+                              ) : (
+                                <p className="text-[11px] text-zinc-700 italic">Not seen in bottom performers.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Title Mechanics */}
+          {sp && sp.titleMechanics.some((m) => !m.lowConfidence) && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                <Hash className="w-3.5 h-3.5 text-amber-500" />
+                <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Title Mechanics</p>
+              </div>
+              <div className="p-5 space-y-2">
+                {sp.titleMechanics.map((m) => (
+                  <div
+                    key={m.label}
+                    className={`flex items-center gap-3 rounded-lg px-4 py-2.5 ${m.lowConfidence ? "opacity-40" : "bg-[#0d0d0f]"}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[12px] text-zinc-300">{m.label}</p>
+                        {m.lowConfidence && (
+                          <span className="text-[9px] text-amber-600 bg-amber-900/20 px-1.5 py-0.5 rounded">low confidence</span>
                         )}
                       </div>
-                    );
-                  })}
+                      <p className="text-[10px] text-zinc-600 mt-0.5 font-mono">
+                        {m.nWith} with ({fmt(m.avgViewsWith)}) · {m.nWithout} without ({fmt(m.avgViewsWithout)})
+                      </p>
+                    </div>
+                    <div className={`px-2.5 py-1 rounded-lg border text-sm font-bold tabular-nums shrink-0 ${mBg(m.multiplier)} ${mColor(m.multiplier)}`}>
+                      {m.multiplier.toFixed(1)}×
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-zinc-700 mt-1">× = avg views with mechanic ÷ avg views without. Low confidence = &lt;5 videos with mechanic.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Winning Lengths */}
+          {sp ? (
+            sp.durationBuckets.length > 0 && (
+              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                  <Clock className="w-3.5 h-3.5 text-blue-400" />
+                  <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Winning Lengths</p>
+                  <span className="ml-auto text-[10px] text-zinc-600 font-mono">{sp.totalVideos} videos</span>
+                </div>
+                <div className="p-5 space-y-3">
+                  {[...sp.durationBuckets].sort((a, b) => b.avgViews - a.avgViews).map((b) => (
+                    <div key={b.label} className={b.lowConfidence ? "opacity-40" : ""}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-zinc-400 w-24 shrink-0">{b.label}</span>
+                        <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${mBar(b.viewMultiplier)}`}
+                            style={{ width: `${Math.round((b.avgViews / maxDurAvg) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-zinc-600 font-mono w-8">n={b.n}</span>
+                          <span className="text-[11px] text-zinc-400 w-14 text-right tabular-nums">{fmt(b.avgViews)}</span>
+                          <span className={`text-[11px] font-semibold tabular-nums w-10 text-right ${mColor(b.viewMultiplier)}`}>{b.viewMultiplier.toFixed(1)}×</span>
+                        </div>
+                      </div>
+                      {b.topPerformerCount > 0 && (
+                        <p className="text-[10px] text-zinc-700 mt-0.5 ml-[108px]">{b.topPerformerCount} of your top-10 in this range</p>
+                      )}
+                      {b.lowConfidence && (
+                        <p className="text-[9px] text-amber-700 ml-[108px]">low confidence</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : (
+            topDurations.length > 0 && (
+              <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                  <Clock className="w-3.5 h-3.5 text-blue-400" />
+                  <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Winning Lengths</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <p className="text-xs text-zinc-300 leading-relaxed">{buildLengthInsight(avgTopSec, topLengthRange, avgBotSec, botLengthRange, topDurations.length, botDurations.length)}</p>
+                  <div className="pt-4 border-t border-[#1f1f22]">
+                    <div className="grid sm:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers · avg {fmtMins(avgTopSec)}</p>
+                        <div className="space-y-1.5">
+                          {topPerformers.slice(0, 8).map((v) => {
+                            const secs = parseDurationSeconds(v.duration);
+                            return secs > 0 ? (
+                              <div key={v.id} className="flex items-baseline gap-2">
+                                <span className="text-[10px] font-mono text-blue-400 shrink-0 w-7">{fmtMins(secs)}</span>
+                                <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                      {botDurations.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers · avg {fmtMins(avgBotSec)}</p>
+                          <div className="space-y-1.5">
+                            {bottomPerformers.slice(0, 8).map((v) => {
+                              const secs = parseDurationSeconds(v.duration);
+                              return secs > 0 ? (
+                                <div key={v.id} className="flex items-baseline gap-2">
+                                  <span className="text-[10px] font-mono text-zinc-600 shrink-0 w-7">{fmtMins(secs)}</span>
+                                  <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
+                                </div>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Posting Timing */}
+          {sp && (sp.postingTiming.byDayOfWeek.length > 0 || sp.postingTiming.byTimeOfDay.length > 0) && (
+            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <p className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">Posting Timing</p>
+                {sp.postingTiming.lowConfidence && (
+                  <span className="ml-auto text-[9px] text-amber-600 bg-amber-900/20 px-2 py-0.5 rounded">thin data — treat with caution</span>
+                )}
+              </div>
+              <div className="p-5 grid sm:grid-cols-2 gap-8">
+                <div>
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By day of week (UTC)</p>
+                  <div className="space-y-1.5">
+                    {[...sp.postingTiming.byDayOfWeek].sort((a, b) => b.avgViews - a.avgViews).map((d) => (
+                      <div key={d.day} className={d.n < 3 ? "opacity-40" : ""}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-zinc-500 w-20 shrink-0">{d.day}</span>
+                          <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
+                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((d.avgViews / maxDayAvg) * 100)}%` }} />
+                          </div>
+                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(d.avgViews)}</span>
+                          <span className="text-[10px] text-zinc-700 shrink-0 w-8 text-right font-mono">n={d.n}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By time of day (UTC)</p>
+                  <div className="space-y-1.5">
+                    {[...sp.postingTiming.byTimeOfDay].sort((a, b) => b.avgViews - a.avgViews).map((s) => (
+                      <div key={s.slot} className={s.n < 3 ? "opacity-40" : ""}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-zinc-500 w-32 shrink-0">{s.slot}</span>
+                          <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
+                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((s.avgViews / maxSlotAvg) * 100)}%` }} />
+                          </div>
+                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(s.avgViews)}</span>
+                          <span className="text-[10px] text-zinc-700 shrink-0 w-8 text-right font-mono">n={s.n}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-zinc-700 mt-3">Your local upload time may differ from UTC.</p>
                 </div>
               </div>
             </div>
@@ -828,53 +1063,6 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* Winning Lengths */}
-          {topDurations.length > 0 && (
-            <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
-                <Clock className="w-3.5 h-3.5 text-blue-400" />
-                <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Winning Lengths</p>
-              </div>
-              <div className="p-5 space-y-4">
-                <p className="text-xs text-zinc-300 leading-relaxed">{buildLengthInsight(avgTopSec, topLengthRange, avgBotSec, botLengthRange, topDurations.length, botDurations.length)}</p>
-                <div className="pt-4 border-t border-[#1f1f22]">
-                  <div className="grid sm:grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Top performers · avg {fmtMins(avgTopSec)}</p>
-                      <div className="space-y-1.5">
-                        {topPerformers.slice(0, 8).map((v) => {
-                          const secs = parseDurationSeconds(v.duration);
-                          return secs > 0 ? (
-                            <div key={v.id} className="flex items-baseline gap-2">
-                              <span className="text-[10px] font-mono text-blue-400 shrink-0 w-7">{fmtMins(secs)}</span>
-                              <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    </div>
-                    {botDurations.length > 0 && (
-                      <div>
-                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Bottom performers · avg {fmtMins(avgBotSec)}</p>
-                        <div className="space-y-1.5">
-                          {bottomPerformers.slice(0, 8).map((v) => {
-                            const secs = parseDurationSeconds(v.duration);
-                            return secs > 0 ? (
-                              <div key={v.id} className="flex items-baseline gap-2">
-                                <span className="text-[10px] font-mono text-zinc-600 shrink-0 w-7">{fmtMins(secs)}</span>
-                                <p className="text-[11px] text-zinc-500 truncate">{v.title}</p>
-                              </div>
-                            ) : null;
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           )}
