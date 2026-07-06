@@ -105,9 +105,13 @@ export function TrajectorySection({ analysis: a, snapshots, onTurnIntoBrief }: P
 
   return (
     <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22] text-left hover:bg-[#13131a] transition-colors"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed((c) => !c); } }}
+        className="w-full flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22] text-left hover:bg-[#13131a] transition-colors cursor-pointer"
       >
         <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
         <p className="text-[10px] font-semibold text-sky-400 uppercase tracking-wider">Trajectory</p>
@@ -123,7 +127,7 @@ export function TrajectorySection({ analysis: a, snapshots, onTurnIntoBrief }: P
           </button>
           <ChevronDown className={`w-3.5 h-3.5 text-zinc-600 transition-transform ${collapsed ? "-rotate-90" : ""}`} />
         </div>
-      </button>
+      </div>
 
       {!collapsed && (
         <div className="p-5 space-y-5">
