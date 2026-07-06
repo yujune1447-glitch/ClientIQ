@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, X, MessageSquare, Link2, TrendingUp, TrendingDown, Minus, Clock } from "lucide-react";
+import { Loader2, X, MessageSquare, Link2, TrendingUp, TrendingDown, Minus, Clock, Trash2 } from "lucide-react";
 
 type Status = "to_make" | "in_progress" | "done";
 type Verdict = "overperformed" | "on_par" | "underperformed" | "pending" | "not_posted";
@@ -84,6 +84,8 @@ export function SavedIdeasBoard({
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
 
   const [captureIdea, setCaptureIdea] = useState<SavedIdea | null>(null);
@@ -129,12 +131,34 @@ export function SavedIdeasBoard({
     setSelectedIdea(idea);
     setDraft(toDraft(idea));
     setModalError(null);
+    setConfirmDelete(false);
   };
 
   const closeModal = () => {
     setSelectedIdea(null);
     setDraft(null);
     setModalError(null);
+    setConfirmDelete(false);
+  };
+
+  const deleteIdea = async () => {
+    if (!selectedIdea) return;
+    setDeleting(true);
+    setModalError(null);
+    try {
+      const res = await fetch(`/api/saved-ideas/${selectedIdea.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setIdeas((prev) => prev.filter((i) => i.id !== selectedIdea.id));
+      closeModal();
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Delete failed");
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -508,7 +532,7 @@ export function SavedIdeasBoard({
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-[#1f1f22] flex items-center justify-between gap-3">
-              <div>
+              <div className="flex items-center gap-1">
                 {onOpenChat && (
                   <button
                     onClick={() => {
@@ -519,6 +543,34 @@ export function SavedIdeasBoard({
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     Open in AI Chat
+                  </button>
+                )}
+                {confirmDelete ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[12px] text-zinc-400">Delete this idea?</span>
+                    <button
+                      onClick={deleteIdea}
+                      disabled={deleting}
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-red-400 hover:text-red-300 px-2.5 py-1.5 rounded-lg hover:bg-red-950/40 disabled:opacity-50 transition-colors"
+                    >
+                      {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      {deleting ? "Deleting…" : "Confirm"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                      className="text-[12px] text-zinc-500 hover:text-zinc-300 px-2.5 py-1.5 rounded-lg hover:bg-[#1c1c1f] disabled:opacity-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    title="Delete idea"
+                    className="flex items-center justify-center w-8 h-8 text-zinc-600 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>

@@ -46,3 +46,25 @@ export async function PATCH(
 
   return NextResponse.json({ idea: data });
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = request.cookies.get("user_id")?.value;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const supabase = createAdminClient();
+
+  // Hard delete. Any idea_outcomes rows cascade via their idea_id FK (on delete cascade).
+  const { error } = await supabase
+    .from("saved_ideas")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
