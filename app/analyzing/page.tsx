@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Zap, CheckCircle, Loader2, PlayCircle, AlertCircle, Minus } from "lucide-react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Zap, CheckCircle, Loader2, PlayCircle, AlertCircle, Minus, Eye, Database } from "lucide-react";
 
 type StepStatus = "pending" | "active" | "complete" | "skipped";
 
@@ -18,78 +18,139 @@ const STEPS = [
   { id: "save", label: "Generating your brief", sublabel: "Claude is combining all intelligence" },
 ];
 
-export default function AnalyzingPage() {
+function isQuotaError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return lower.includes("quota") || lower.includes("daily limit") || lower.includes("ratelimitexceeded");
+}
+
+function AnalyzingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const reanalyze = searchParams.get("reanalyze") === "1";
+
   const [statuses, setStatuses] = useState<Record<string, StepStatus>>({ connect: "active" });
   const [videoCount, setVideoCount] = useState(0);
   const [detailsProgress, setDetailsProgress] = useState({ current: 0, total: 0 });
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [latestAnalysisId, setLatestAnalysisId] = useState<string | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const source = new EventSource("/api/analyze");
-    sourceRef.current = source;
+    let cancelled = false;
 
-    source.onmessage = (e: MessageEvent) => {
-      const msg = JSON.parse(e.data) as Record<string, unknown>;
-
-      switch (msg.event) {
-        case "step_start":
-          setStatuses((prev) => ({ ...prev, [msg.step as string]: "active" }));
-          break;
-        case "step_done":
-          setStatuses((prev) => ({ ...prev, [msg.step as string]: "complete" }));
-          break;
-        case "step_skip":
-          setStatuses((prev) => ({ ...prev, [msg.step as string]: "skipped" }));
-          break;
-        case "videos_found":
-          setVideoCount(msg.count as number);
-          break;
-        case "details_progress":
-          setDetailsProgress({ current: msg.current as number, total: msg.total as number });
-          break;
-        case "complete": {
-          setStatuses((prev) =>
-            Object.fromEntries(
-              STEPS.map((s) => [s.id, prev[s.id] === "skipped" ? "skipped" : "complete"])
-            )
-          );
-          setDone(true);
-          source.close();
-          const analysisId = msg.analysisId as string;
-          console.log("[analyzing] complete event received. analysisId=%s", analysisId ?? "MISSING");
-          if (analysisId) {
-            router.push(`/workspace?analysis=${analysisId}`);
-          } else {
-            console.error("[analyzing] No analysisId in complete event — cannot redirect to results.");
+    async function init() {
+      if (!reanalyze) {
+        try {
+          const res = await fetch("/api/analysis/latest");
+          if (!cancelled && res.ok) {
+            const data = await res.json();
+            if (data?.id) {
+              router.replace(`/workspace?analysis=${data.id}`);
+              return;
+            }
           }
-          break;
-        }
-        case "error":
-          console.error("[analyzing] error event: message=%s", msg.message);
-          if (msg.message === "needs_reauth") {
-            source.close();
-            router.replace("/api/auth/youtube");
-          } else {
-            setError(msg.message as string);
-            source.close();
-          }
-          break;
+        } catch {}
       }
+
+      if (cancelled) return;
+
+      // Pre-fetch latest analysis ID for error recovery while analysis runs
+      fetch("/api/analysis/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d?.id && !cancelled) setLatestAnalysisId(d.id); })
+        .catch(() => {});
+
+      const source = new EventSource("/api/analyze");
+      sourceRef.current = source;
+
+      source.onmessage = (e: MessageEvent) => {
+        if (cancelled) return;
+        const msg = JSON.parse(e.data) as Record<string, unknown>;
+
+        switch (msg.event) {
+          case "step_start":
+            setStatuses((prev) => ({ ...prev, [msg.step as string]: "active" }));
+            break;
+          case "step_done":
+            setStatuses((prev) => ({ ...prev, [msg.step as string]: "complete" }));
+            break;
+          case "step_skip":
+            setStatuses((prev) => ({ ...prev, [msg.step as string]: "skipped" }));
+            break;
+          case "videos_found":
+            setVideoCount(msg.count as number);
+            break;
+          case "details_progress":
+            setDetailsProgress({ current: msg.current as number, total: msg.total as number });
+            break;
+          case "complete": {
+            setStatuses((prev) =>
+              Object.fromEntries(
+                STEPS.map((s) => [s.id, prev[s.id] === "skipped" ? "skipped" : "complete"])
+              )
+            );
+            setDone(true);
+            source.close();
+            const analysisId = msg.analysisId as string;
+            if (analysisId) {
+              router.push(`/workspace?analysis=${analysisId}`);
+            }
+            break;
+          }
+          case "error":
+            if (msg.message === "needs_reauth") {
+              source.close();
+              router.replace("/api/auth/youtube");
+            } else {
+              setError(msg.message as string);
+              source.close();
+            }
+            break;
+        }
+      };
+
+      source.onerror = () => {
+        if (!cancelled) setError("Connection lost. Please try again.");
+        source.close();
+      };
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+      sourceRef.current?.close();
     };
+  }, [router, reanalyze]);
 
-    source.onerror = () => {
-      setError("Connection lost. Please try again.");
-      source.close();
-    };
+  const handleRecompute = async () => {
+    if (recomputing) return;
+    setRecomputing(true);
+    try {
+      const res = await fetch("/api/analyze/recompute", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        router.push(`/workspace?analysis=${data.analysisId}`);
+      } else if (data.error === "no_cache") {
+        setError("No cached data found. Run a full analysis first.");
+      } else {
+        setError("Recompute failed. Please try again.");
+      }
+    } catch {
+      setError("Recompute failed. Please try again.");
+    } finally {
+      setRecomputing(false);
+    }
+  };
 
-    return () => source.close();
-  }, [router]);
+  const goToLastAnalysis = () => {
+    router.push(latestAnalysisId ? `/workspace?analysis=${latestAnalysisId}` : "/workspace");
+  };
 
+  const quotaError = error ? isQuotaError(error) : false;
   const statusOf = (id: string): StepStatus => statuses[id] ?? "pending";
-
   const activeStep = STEPS.find((s) => statusOf(s.id) === "active");
   const processedPct =
     detailsProgress.total > 0
@@ -103,6 +164,12 @@ export default function AnalyzingPage() {
           <Zap className="w-4 h-4 text-white fill-white" />
         </div>
         <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+        <a
+          href="/workspace"
+          className="ml-auto text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          ← Back to workspace
+        </a>
       </nav>
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-16">
@@ -119,11 +186,41 @@ export default function AnalyzingPage() {
           </div>
 
           {error ? (
-            <div className="flex items-start gap-3 bg-[#1a0f0f] border border-red-900/40 rounded-xl p-5 mb-6">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-red-400">Analysis failed</p>
-                <p className="text-xs text-zinc-500 mt-1">{error}</p>
+            <div className="mb-6 space-y-4">
+              <div className="flex items-start gap-3 bg-[#1a0f0f] border border-red-900/40 rounded-xl p-5">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-400">
+                    {quotaError ? "YouTube daily quota reached" : "Analysis failed"}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    {quotaError
+                      ? "YouTube daily quota reached — your cached analysis is still available."
+                      : error}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={goToLastAnalysis}
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#111113] border border-[#1f1f22] hover:border-zinc-600 rounded-xl px-4 py-3 text-sm font-medium transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  View last analysis
+                </button>
+                <button
+                  onClick={handleRecompute}
+                  disabled={recomputing}
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl px-4 py-3 text-sm font-medium transition-colors"
+                >
+                  {recomputing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Database className="w-4 h-4" />
+                  )}
+                  {recomputing ? "Recomputing…" : "Recompute from cache"}
+                </button>
               </div>
             </div>
           ) : (
@@ -169,7 +266,11 @@ export default function AnalyzingPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${status === "pending" ? "text-zinc-600" : status === "skipped" ? "text-zinc-600" : "text-white"}`}>
+                    <p
+                      className={`text-sm font-medium ${
+                        status === "pending" || status === "skipped" ? "text-zinc-600" : "text-white"
+                      }`}
+                    >
                       {step.label}
                     </p>
                     {status === "skipped" && (
@@ -186,18 +287,9 @@ export default function AnalyzingPage() {
 
           <div className="grid grid-cols-3 gap-3">
             {[
-              {
-                label: "Videos found",
-                value: videoCount > 0 ? videoCount.toLocaleString() : "—",
-              },
-              {
-                label: "Details fetched",
-                value: detailsProgress.total > 0 ? `${processedPct}%` : "—",
-              },
-              {
-                label: "Status",
-                value: error ? "Error" : done ? "Done" : "Running",
-              },
+              { label: "Videos found", value: videoCount > 0 ? videoCount.toLocaleString() : "—" },
+              { label: "Details fetched", value: detailsProgress.total > 0 ? `${processedPct}%` : "—" },
+              { label: "Status", value: error ? "Error" : done ? "Done" : "Running" },
             ].map((stat) => (
               <div key={stat.label} className="bg-[#111113] border border-[#1f1f22] rounded-lg p-3 text-center">
                 <p className="text-lg font-bold tabular-nums">{stat.value}</p>
@@ -208,5 +300,13 @@ export default function AnalyzingPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function AnalyzingPage() {
+  return (
+    <Suspense>
+      <AnalyzingContent />
+    </Suspense>
   );
 }

@@ -586,7 +586,7 @@ export default function WorkspaceShell({
           {ytConn && (
             <>
               <a
-                href="/analyzing"
+                href="/analyzing?reanalyze=1"
                 className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5 shrink-0" />
