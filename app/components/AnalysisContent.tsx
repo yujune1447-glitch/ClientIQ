@@ -577,8 +577,8 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const bottomHookClusters = extractHookClusters(bottomPerformers.map((v) => v.title));
   const sp = summary.successPatterns;
   const maxDurAvg = sp && sp.durationBuckets.length ? Math.max(...sp.durationBuckets.map((b) => b.medianViews), 1) : 1;
-  const maxDayAvg = sp && sp.postingTiming.byDayOfWeek.length ? Math.max(...sp.postingTiming.byDayOfWeek.map((d) => d.avgViews), 1) : 1;
-  const maxSlotAvg = sp && sp.postingTiming.byTimeOfDay.length ? Math.max(...sp.postingTiming.byTimeOfDay.map((s) => s.avgViews), 1) : 1;
+  const maxDayAvg = sp && sp.postingTiming.byDayOfWeek.length ? Math.max(...sp.postingTiming.byDayOfWeek.map((d) => d.medianViews), 1) : 1;
+  const maxSlotAvg = sp && sp.postingTiming.byTimeOfDay.length ? Math.max(...sp.postingTiming.byTimeOfDay.map((s) => s.medianViews), 1) : 1;
   const mColor = (m: number) => m >= 1.5 ? "text-emerald-400" : m >= 1.2 ? "text-blue-400" : m < 0.8 ? "text-red-400" : "text-zinc-500";
   const mBg = (m: number) => m >= 1.5 ? "bg-emerald-500/10 border-emerald-900/30" : m >= 1.2 ? "bg-blue-500/10 border-blue-900/30" : m < 0.8 ? "bg-red-500/10 border-red-900/30" : "bg-zinc-800/30 border-[#27272a]";
   const mBar = (m: number) => m >= 1.5 ? "bg-emerald-500" : m >= 1.2 ? "bg-blue-500" : m < 0.8 ? "bg-red-800" : "bg-zinc-600";
@@ -1053,16 +1053,16 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
               </div>
               <div className="p-5 grid sm:grid-cols-2 gap-8">
                 <div>
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By day of week (UTC)</p>
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By day of week — median views (UTC)</p>
                   <div className="space-y-1.5">
-                    {[...sp.postingTiming.byDayOfWeek].sort((a, b) => b.avgViews - a.avgViews).map((d) => (
+                    {[...sp.postingTiming.byDayOfWeek].sort((a, b) => b.medianViews - a.medianViews).map((d) => (
                       <div key={d.day} className={d.n < 3 ? "opacity-40" : ""}>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-zinc-500 w-20 shrink-0">{d.day}</span>
                           <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
-                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((d.avgViews / maxDayAvg) * 100)}%` }} />
+                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((d.medianViews / maxDayAvg) * 100)}%` }} />
                           </div>
-                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(d.avgViews)}</span>
+                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(d.medianViews)}</span>
                           <span className="text-[10px] text-zinc-700 shrink-0 w-8 text-right font-mono">n={d.n}</span>
                         </div>
                       </div>
@@ -1070,16 +1070,16 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By time of day (UTC)</p>
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">By time of day — median views (UTC)</p>
                   <div className="space-y-1.5">
-                    {[...sp.postingTiming.byTimeOfDay].sort((a, b) => b.avgViews - a.avgViews).map((s) => (
+                    {[...sp.postingTiming.byTimeOfDay].sort((a, b) => b.medianViews - a.medianViews).map((s) => (
                       <div key={s.slot} className={s.n < 3 ? "opacity-40" : ""}>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-zinc-500 w-32 shrink-0">{s.slot}</span>
                           <div className="flex-1 bg-[#1a1a1d] rounded-full h-1.5 overflow-hidden">
-                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((s.avgViews / maxSlotAvg) * 100)}%` }} />
+                            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.round((s.medianViews / maxSlotAvg) * 100)}%` }} />
                           </div>
-                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(s.avgViews)}</span>
+                          <span className="text-[10px] text-zinc-500 shrink-0 w-14 text-right tabular-nums">{fmt(s.medianViews)}</span>
                           <span className="text-[10px] text-zinc-700 shrink-0 w-8 text-right font-mono">n={s.n}</span>
                         </div>
                       </div>

@@ -13,15 +13,37 @@ function fmt(n: number) {
   return n.toLocaleString();
 }
 
+const DAY_MS = 86_400_000;
+// Snapshots taken within this window of each other (e.g. a re-analyze then a
+// recompute in the same session) are not a real week-over-week comparison.
+const MIN_GAP_MS = DAY_MS;
+
+// Real week-over-week subscriber growth. Compares the latest snapshot against the
+// prior snapshot closest to 7 days earlier, ignoring near-duplicate snapshots
+// taken in the same session. Returns null when there's no valid prior snapshot.
 function weeklyGrowth(snapshots: ChannelSnapshot[]): number | null {
   if (snapshots.length < 2) return null;
   const sorted = [...snapshots].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
-  const prev = sorted[sorted.length - 2].subscriber_count;
-  const latest = sorted[sorted.length - 1].subscriber_count;
-  if (prev <= 0) return null;
-  return ((latest - prev) / prev) * 100;
+  const latest = sorted[sorted.length - 1];
+  const latestTime = new Date(latest.created_at).getTime();
+
+  const candidates = sorted
+    .slice(0, -1)
+    .filter((s) => latestTime - new Date(s.created_at).getTime() >= MIN_GAP_MS);
+  if (!candidates.length) return null;
+
+  const targetTime = latestTime - 7 * DAY_MS;
+  const prev = candidates.reduce((best, s) =>
+    Math.abs(new Date(s.created_at).getTime() - targetTime) <
+    Math.abs(new Date(best.created_at).getTime() - targetTime)
+      ? s
+      : best
+  );
+
+  if (prev.subscriber_count <= 0) return null;
+  return ((latest.subscriber_count - prev.subscriber_count) / prev.subscriber_count) * 100;
 }
 
 function GrowthPill({ pct }: { pct: number | null }) {
@@ -245,7 +267,11 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
                     ? `${ytGrowth >= 0 ? "+" : ""}${ytGrowth.toFixed(1)}%`
                     : "—"
                 }
-                sub="YouTube subscribers vs prev snapshot"
+                sub={
+                  ytGrowth !== null
+                    ? "YouTube subscribers, week over week"
+                    : "needs a second snapshot to compute"
+                }
                 icon={
                   ytGrowth !== null && ytGrowth >= 0
                     ? <TrendingUp className="w-4 h-4 text-emerald-500" />

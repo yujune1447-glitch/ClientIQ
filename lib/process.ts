@@ -21,11 +21,6 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function avgViews(videos: VideoWithScore[]): number {
-  if (!videos.length) return 0;
-  return videos.reduce((s, v) => s + v.viewCount, 0) / videos.length;
-}
-
 function parseDurSec(iso: string): number {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -175,12 +170,12 @@ export function computeSuccessPatterns(
 
   const byDayOfWeek = DAYS.map((day, i) => {
     const group = dayGroups.get(i) ?? [];
-    return { day, n: group.length, avgViews: Math.round(avgViews(group)) };
+    return { day, n: group.length, medianViews: Math.round(median(group.map((v) => v.viewCount))) };
   }).filter((d) => d.n > 0);
 
   const byTimeOfDay = SLOTS.map(({ label }) => {
     const group = slotGroups.get(label) ?? [];
-    return { slot: label, n: group.length, avgViews: Math.round(avgViews(group)) };
+    return { slot: label, n: group.length, medianViews: Math.round(median(group.map((v) => v.viewCount))) };
   }).filter((s) => s.n > 0);
 
   const postingTiming = {
@@ -228,11 +223,11 @@ export function computeSuccessPatterns(
 
   // Best posting day
   if (!postingTiming.lowConfidence) {
-    const bestDay = [...byDayOfWeek].filter((d) => d.n >= 5).sort((a, b) => b.avgViews - a.avgViews)[0];
+    const bestDay = [...byDayOfWeek].filter((d) => d.n >= 5).sort((a, b) => b.medianViews - a.medianViews)[0];
     if (bestDay) {
       tldr.push({
         text: `${bestDay.day} is your strongest publishing day`,
-        evidence: `n=${bestDay.n}, ${fmt(bestDay.avgViews)} avg views`,
+        evidence: `n=${bestDay.n}, ${fmt(bestDay.medianViews)} median views`,
       });
     }
   }

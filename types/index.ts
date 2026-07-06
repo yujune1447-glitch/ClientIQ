@@ -108,8 +108,8 @@ export interface HookAnalysis {
 
 export interface PostingTimingStat {
   lowConfidence: boolean;
-  byDayOfWeek: { day: string; n: number; avgViews: number }[];
-  byTimeOfDay: { slot: string; n: number; avgViews: number }[];
+  byDayOfWeek: { day: string; n: number; medianViews: number }[];
+  byTimeOfDay: { slot: string; n: number; medianViews: number }[];
 }
 
 export interface VideoSubsStat {
