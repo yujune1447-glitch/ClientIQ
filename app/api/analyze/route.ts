@@ -12,8 +12,10 @@ import {
   fetchRetentionSubsBatch,
   fetchTrafficBatch,
   fetchDemographics,
+  fetchWeeklySubs,
   type VideoRetentionSubs,
   type TrafficSources,
+  type WeeklySubs,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
 import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis, computeAudienceAnalysis, computeCadenceAnalysis, computeTrajectoryAnalysis } from "@/lib/process";
@@ -184,6 +186,10 @@ export async function GET(request: NextRequest) {
         const analyticsMap = await getChannelAnalytics(accessToken, (page, total) => {
           emit({ event: "analytics_progress", page, total });
         });
+        // Exact weekly subscriber movement (Analytics API, separate quota) for the dashboard.
+        const weeklySubs: WeeklySubs | null = await fetchWeeklySubs(accessToken);
+        console.log("[analyze] Weekly subs (last 7d): gained=%s lost=%s",
+          weeklySubs?.gained ?? "n/a", weeklySubs?.lost ?? "n/a");
         emit({ event: "step_done", step: "analytics" });
 
         // ── Niche intelligence (if niche set) ────────────────────────────
@@ -529,6 +535,8 @@ export async function GET(request: NextRequest) {
             total_videos: videoIds.length,
             instagram_summary: igSummary,
             tiktok_summary: tikTokSummary,
+            weekly_subs_gained: weeklySubs?.gained ?? null,
+            weekly_subs_lost: weeklySubs?.lost ?? null,
           })
           .select("id")
           .single();

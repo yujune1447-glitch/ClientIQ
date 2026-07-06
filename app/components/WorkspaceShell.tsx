@@ -132,6 +132,8 @@ export default function WorkspaceShell({
         commentIntel: raw.comment_intelligence ?? null,
         isUnread: raw.is_unread === true,
         isScheduled: raw.generated_by === "scheduled",
+        weeklySubsGained: raw.weekly_subs_gained ?? null,
+        weeklySubsLost: raw.weekly_subs_lost ?? null,
       });
     } catch {
       // non-fatal: center will just stay empty if no analysis exists

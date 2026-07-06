@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("analyses")
-    .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at")
+    .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at,weekly_subs_gained,weekly_subs_lost")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)

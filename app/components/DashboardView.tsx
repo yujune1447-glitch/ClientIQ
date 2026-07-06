@@ -13,46 +13,38 @@ function fmt(n: number) {
   return n.toLocaleString();
 }
 
-const DAY_MS = 86_400_000;
-// Snapshots taken within this window of each other (e.g. a re-analyze then a
-// recompute in the same session) are not a real week-over-week comparison.
-const MIN_GAP_MS = DAY_MS;
-
-// Real week-over-week subscriber growth. Compares the latest snapshot against the
-// prior snapshot closest to 7 days earlier, ignoring near-duplicate snapshots
-// taken in the same session. Returns null when there's no valid prior snapshot.
-function weeklyGrowth(snapshots: ChannelSnapshot[]): number | null {
-  if (snapshots.length < 2) return null;
-  const sorted = [...snapshots].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-  const latest = sorted[sorted.length - 1];
-  const latestTime = new Date(latest.created_at).getTime();
-
-  const candidates = sorted
-    .slice(0, -1)
-    .filter((s) => latestTime - new Date(s.created_at).getTime() >= MIN_GAP_MS);
-  if (!candidates.length) return null;
-
-  const targetTime = latestTime - 7 * DAY_MS;
-  const prev = candidates.reduce((best, s) =>
-    Math.abs(new Date(s.created_at).getTime() - targetTime) <
-    Math.abs(new Date(best.created_at).getTime() - targetTime)
-      ? s
-      : best
-  );
-
-  if (prev.subscriber_count <= 0) return null;
-  return ((latest.subscriber_count - prev.subscriber_count) / prev.subscriber_count) * 100;
+interface WeeklyGrowth {
+  net: number;
+  pct: number | null;
 }
 
-function GrowthPill({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-[11px] text-zinc-600">—</span>;
-  const pos = pct >= 0;
+// Exact week-over-week subscriber growth from the Analytics API (subscribersGained −
+// subscribersLost over the last 7 days), stored on the analysis. Unrounded, unlike the
+// public subscriberCount. Returns null only when that Analytics data is genuinely absent
+// (old analysis / fetch failed) — a real net of 0 returns { net: 0 }, not null.
+function weeklyGrowth(
+  gained: number | null | undefined,
+  lost: number | null | undefined,
+  currentSubs: number,
+): WeeklyGrowth | null {
+  if (gained == null || lost == null) return null;
+  const net = gained - lost;
+  const startCount = currentSubs - net; // subscribers at the start of the 7-day window
+  const pct = startCount > 0 ? (net / startCount) * 100 : null;
+  return { net, pct };
+}
+
+function signedInt(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n.toLocaleString()}`;
+}
+
+function GrowthPill({ growth }: { growth: WeeklyGrowth | null }) {
+  if (growth === null) return <span className="text-[11px] text-zinc-600">—</span>;
+  const pos = growth.net >= 0;
   return (
     <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${pos ? "text-emerald-400" : "text-red-400"}`}>
       {pos ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-      {pos ? "+" : ""}{pct.toFixed(1)}%
+      {signedInt(growth.net)}{growth.pct !== null ? ` (${pos ? "+" : ""}${growth.pct.toFixed(2)}%)` : ""}
     </span>
   );
 }
@@ -86,7 +78,7 @@ interface Props {
   ttConn: { displayName: string } | null;
 }
 
-export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: Props) {
+export function DashboardView({ analysis, ytConn, igConn, ttConn }: Props) {
   if (!ytConn && !igConn && !ttConn) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -128,7 +120,7 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
   const igReach = igSummary?.posts.reduce((s, p) => s + (p.reach ?? 0), 0) ?? 0;
   const totalViews = ytViews + ttViews + igReach;
 
-  const ytGrowth = weeklyGrowth(snapshots);
+  const ytGrowth = weeklyGrowth(analysis?.weeklySubsGained, analysis?.weeklySubsLost, ytSubs);
 
   const engRates: number[] = [];
   if (summary && summary.averages.views > 0)
@@ -262,11 +254,15 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
               />
               <BigStatCard
                 label="Weekly Growth"
-                value={ytGrowth !== null ? `${ytGrowth >= 0 ? "+" : ""}${ytGrowth.toFixed(1)}%` : "—"}
-                sub={ytGrowth !== null ? "YouTube subscribers, week over week" : undefined}
-                hint={ytGrowth === null ? "Needs ~a week of snapshots to compute." : undefined}
+                value={ytGrowth !== null ? signedInt(ytGrowth.net) : "—"}
+                sub={
+                  ytGrowth !== null
+                    ? `subscribers this week${ytGrowth.pct !== null ? ` · ${ytGrowth.net >= 0 ? "+" : ""}${ytGrowth.pct.toFixed(2)}%` : ""}`
+                    : undefined
+                }
+                hint={ytGrowth === null ? "Populates after your next full analysis" : undefined}
                 icon={
-                  ytGrowth !== null && ytGrowth >= 0
+                  ytGrowth !== null && ytGrowth.net >= 0
                     ? <TrendingUp className="w-4 h-4 text-emerald-500" />
                     : ytGrowth !== null
                     ? <TrendingDown className="w-4 h-4 text-red-500" />
@@ -274,7 +270,7 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
                 }
                 accent={
                   ytGrowth !== null
-                    ? ytGrowth >= 0 ? "text-emerald-400" : "text-red-400"
+                    ? ytGrowth.net >= 0 ? "text-emerald-400" : "text-red-400"
                     : undefined
                 }
               />
@@ -304,7 +300,7 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
                     { label: "Total views", value: summary ? fmt(summary.channel.totalViews) : "—" },
                     {
                       label: "Weekly growth",
-                      custom: <GrowthPill pct={ytGrowth} />,
+                      custom: <GrowthPill growth={ytGrowth} />,
                     },
                   ]}
                 />

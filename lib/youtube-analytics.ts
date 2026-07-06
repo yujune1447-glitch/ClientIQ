@@ -127,6 +127,32 @@ export async function fetchTrafficBatch(
   return map;
 }
 
+export interface WeeklySubs {
+  gained: number;
+  lost: number;
+}
+
+// Channel-level subscribersGained/Lost over the last `days` days — exact and unrounded,
+// unlike the public subscriberCount. Analytics API (separate 200k/day quota, not Data API).
+// Returns null only if the Analytics query genuinely fails.
+export async function fetchWeeklySubs(accessToken: string, days = 7): Promise<WeeklySubs | null> {
+  const startDate = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  try {
+    const rows = await analyticsQuery({
+      ids: "channel==mine",
+      metrics: "subscribersGained,subscribersLost",
+      startDate,
+      endDate: TODAY,
+    }, accessToken);
+    if (!rows.length) return { gained: 0, lost: 0 };
+    const [gained, lost] = rows[0] as [number, number];
+    return { gained: Number(gained) || 0, lost: Number(lost) || 0 };
+  } catch (err) {
+    console.error(`[yt-analytics] fetchWeeklySubs failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
 export interface DemographicPoint {
   ageGroup: string;
   gender: string;

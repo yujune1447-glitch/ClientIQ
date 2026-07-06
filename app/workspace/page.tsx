@@ -42,7 +42,7 @@ export default async function WorkspacePage({
   if (targetId) {
     const { data, error: selErr } = await supabase
       .from("analyses")
-      .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at")
+      .select("id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at,weekly_subs_gained,weekly_subs_lost")
       .eq("id", targetId)
       .eq("user_id", userId)
       .single();
@@ -74,6 +74,8 @@ export default async function WorkspacePage({
               commentIntel: (selectedAnalysis.comment_intelligence ?? null) as CommentIntelligence | null,
               isUnread: selectedAnalysis.is_unread === true,
               isScheduled: selectedAnalysis.generated_by === "scheduled",
+              weeklySubsGained: selectedAnalysis.weekly_subs_gained ?? null,
+              weeklySubsLost: selectedAnalysis.weekly_subs_lost ?? null,
             } satisfies AnalysisData)
           : null
       }

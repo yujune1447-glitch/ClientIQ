@@ -33,6 +33,8 @@ export interface AnalysisData {
   commentIntel: CommentIntelligence | null;
   isUnread: boolean;
   isScheduled: boolean;
+  weeklySubsGained: number | null;
+  weeklySubsLost: number | null;
 }
 
 type Period = "weekly" | "monthly" | "alltime";
