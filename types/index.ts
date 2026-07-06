@@ -159,6 +159,47 @@ export interface AudienceAnalysis {
   emotionalSignals: { excited: number; grateful: number; curious: number; confused: number; critical: number; requesting: number } | null;
 }
 
+export interface CadenceDayStat {
+  day: string;
+  n: number;
+  medianViews: number;
+  relativeToChannel: number;
+  topPerformerCount: number;
+  lowConfidence: boolean;
+}
+
+export type FrequencyCorrelation = "more" | "less" | "none" | "insufficient";
+
+export interface CadenceAnalysis {
+  totalVideos: number;
+  thinData: boolean;
+  channelMedianViews: number;
+  byDay: CadenceDayStat[];
+  bestDay: string | null;
+  bestDayMultiplier: number | null;
+  topPerformerTimeSlot: string | null;
+  frequencyInsight: string;
+  frequencyCorrelates: FrequencyCorrelation;
+}
+
+export interface TrajectoryQuarter {
+  label: string;
+  startDate: string;
+  n: number;
+  medianViews: number;
+}
+
+export type TrajectoryVerdict = "accelerating" | "steady" | "cooling" | "insufficient_data";
+
+export interface TrajectoryAnalysis {
+  quarters: TrajectoryQuarter[];
+  verdict: TrajectoryVerdict;
+  verdictText: string;
+  recentMedianViews: number | null;
+  priorMedianViews: number | null;
+  changePercent: number | null;
+}
+
 export interface GrowthAnalysis {
   videosWithSubsData: number;
   totalVideosAnalysed: number;
@@ -183,6 +224,18 @@ export interface GrowthAnalysis {
   trifectaInsight: string;
 }
 
+export interface SynthesisTakeaway {
+  text: string;
+  evidence: string;
+  layers: string[];
+}
+
+export interface ChannelSynthesis {
+  headline: string;
+  takeaways: SynthesisTakeaway[];
+  generatedAt: string;
+}
+
 export interface SuccessPatterns {
   channelMedianViews: number;
   totalVideos: number;
@@ -195,6 +248,9 @@ export interface SuccessPatterns {
   retentionAnalysis?: RetentionAnalysis;
   growthAnalysis?: GrowthAnalysis;
   audienceAnalysis?: AudienceAnalysis;
+  cadenceAnalysis?: CadenceAnalysis;
+  trajectoryAnalysis?: TrajectoryAnalysis;
+  synthesis?: ChannelSynthesis;
 }
 
 export interface ChannelSummary {

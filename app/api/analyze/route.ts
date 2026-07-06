@@ -16,8 +16,8 @@ import {
   type TrafficSources,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
-import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis, computeAudienceAnalysis } from "@/lib/process";
-import { generateContentBrief } from "@/lib/claude";
+import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis, computeAudienceAnalysis, computeCadenceAnalysis, computeTrajectoryAnalysis } from "@/lib/process";
+import { generateContentBrief, computeChannelSynthesis } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
 import { saveSnapshot } from "@/lib/snapshot";
@@ -507,6 +507,8 @@ export async function GET(request: NextRequest) {
             trafficMap,
             summary.successPatterns.retentionAnalysis,
           );
+          summary.successPatterns.cadenceAnalysis = computeCadenceAnalysis(scored.scored);
+          summary.successPatterns.trajectoryAnalysis = computeTrajectoryAnalysis(scored.scored);
         }
         console.log("[analyze] Summary built: topPerformers=%d bottomPerformers=%d outliers=%d topCommenters=%d totalVideos=%d",
           summary.topPerformers.length, summary.bottomPerformers.length, summary.outliers.length,
@@ -561,6 +563,20 @@ export async function GET(request: NextRequest) {
           summary.successPatterns.audienceAnalysis = computeAudienceAnalysis(demographics ?? null, commentIntelligence);
         }
         emit({ event: "step_done", step: "comments_intel" });
+
+        // ── Channel synthesis (Claude API — cross-layer, zero googleapis calls) ──
+        if (summary.successPatterns) {
+          try {
+            summary.successPatterns.synthesis = await computeChannelSynthesis(
+              summary.successPatterns,
+              commentIntelligence,
+              channelInfo.title,
+            );
+            console.log("[analyze] Synthesis OK: takeaways=%d", summary.successPatterns.synthesis.takeaways.length);
+          } catch (err) {
+            console.error("[analyze] Synthesis failed (non-fatal):", err instanceof Error ? err.message : err);
+          }
+        }
 
         emit({ event: "step_start", step: "save" });
         console.log("[analyze] Starting brief generation...");

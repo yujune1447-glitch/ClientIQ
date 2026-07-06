@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence } from "@/types";
+import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence, SuccessPatterns, ChannelSynthesis } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -197,6 +197,152 @@ Return ONLY a single valid JSON object — no markdown, no explanation:
     "actionableAdvice": ["Specific action with clear rationale", "action 2", "action 3", "action 4"]
   }
 }`;
+
+function buildSynthesisInput(sp: SuccessPatterns, commentIntel: CommentIntelligence | null, channelTitle: string): string {
+  const lines: string[] = [
+    `CHANNEL: ${channelTitle}`,
+    `Videos analysed: ${sp.totalVideos} · Median views: ${fmt(sp.channelMedianViews)}`,
+    "",
+  ];
+
+  const confCats = sp.titleCategories.filter((c) => !c.lowConfidence).sort((a, b) => b.viewMultiplier - a.viewMultiplier);
+  const confDurs = sp.durationBuckets.filter((b) => !b.lowConfidence).sort((a, b) => b.viewMultiplier - a.viewMultiplier);
+  const confMechs = sp.titleMechanics.filter((m) => !m.lowConfidence).sort((a, b) => b.multiplier - a.multiplier);
+  if (confCats.length || confDurs.length || confMechs.length) {
+    lines.push("LAYER: PACKAGING");
+    if (confCats[0]) lines.push(`  Best title category: "${confCats[0].name}" — ${confCats[0].viewMultiplier.toFixed(1)}× median, n=${confCats[0].n}`);
+    if (confCats[1]) lines.push(`  2nd best: "${confCats[1].name}" — ${confCats[1].viewMultiplier.toFixed(1)}×, n=${confCats[1].n}`);
+    if (confMechs[0]) lines.push(`  Strongest title mechanic: ${confMechs[0].label} — ${confMechs[0].multiplier.toFixed(1)}×`);
+    if (confDurs[0]) lines.push(`  Best length: ${confDurs[0].label} — ${confDurs[0].viewMultiplier.toFixed(1)}×, n=${confDurs[0].n}`);
+    lines.push("");
+  }
+
+  if (sp.retentionAnalysis) {
+    const r = sp.retentionAnalysis;
+    lines.push("LAYER: RETENTION");
+    lines.push(`  Top performer avg retention: ${r.topMedianRetentionPct.toFixed(1)}% vs bottom ${r.bottomMedianRetentionPct.toFixed(1)}%`);
+    if (r.relativeRetentionMedian !== null) lines.push(`  vs YouTube norm: ${r.relativeRetentionMedian.toFixed(1)}% relative retention (n=${r.relativeRetentionN})`);
+    if (r.viewsRetentionDiverge) lines.push("  NOTE: views and retention diverge — high-click videos don't always hold attention");
+    if (r.bestRetainedVideo) lines.push(`  Best retained: "${r.bestRetainedVideo.title.slice(0, 60)}" (${r.bestRetainedVideo.avgViewPct.toFixed(1)}%)`);
+    lines.push("");
+  }
+
+  if (sp.growthAnalysis) {
+    const g = sp.growthAnalysis;
+    lines.push("LAYER: GROWTH");
+    if (!g.thinSubsData) lines.push(`  Top converters: ${g.topMedianSubsGained} median subs/video vs channel median ${g.channelMedianSubsGained}`);
+    if (g.aggregateTraffic) {
+      const t = g.aggregateTraffic;
+      lines.push(`  Traffic: algorithm ${t.algorithmPct.toFixed(0)}%, search ${t.searchPct.toFixed(0)}%, external ${t.externalPct.toFixed(0)}%`);
+    }
+    if (g.trafficInsight) lines.push(`  ${g.trafficInsight}`);
+    if (g.trifectaDiverge && g.trifectaInsight) lines.push(`  ${g.trifectaInsight}`);
+    if (g.conversionInsight) lines.push(`  ${g.conversionInsight}`);
+    lines.push("");
+  }
+
+  if (sp.audienceAnalysis) {
+    const a = sp.audienceAnalysis;
+    lines.push("LAYER: AUDIENCE");
+    if (a.dominantAgeGroup) lines.push(`  Core demographic: ${a.dominantAgeGroup} (${a.dominantAgeGroupPct?.toFixed(0) ?? "?"}%)`);
+    if (a.under25Pct !== null) lines.push(`  Under-25: ${a.under25Pct.toFixed(0)}%`);
+    if (a.malePct !== null) lines.push(`  Gender: ${a.malePct.toFixed(0)}% male / ${a.femalePct?.toFixed(0) ?? "?"}% female`);
+    if (a.personaConfirmation) lines.push(`  ${a.personaConfirmation}`);
+    lines.push("");
+  }
+
+  if (sp.cadenceAnalysis) {
+    const c = sp.cadenceAnalysis;
+    lines.push("LAYER: CADENCE");
+    if (!c.thinData && c.bestDay) lines.push(`  Best day: ${c.bestDay} — ${c.bestDayMultiplier?.toFixed(1) ?? "?"}× median (reliable)`);
+    if (c.topPerformerTimeSlot) lines.push(`  Top performers upload in the: ${c.topPerformerTimeSlot}`);
+    if (c.frequencyInsight) lines.push(`  ${c.frequencyInsight}`);
+    lines.push(`  Frequency vs performance: ${c.frequencyCorrelates}`);
+    lines.push("");
+  }
+
+  if (sp.trajectoryAnalysis) {
+    const t = sp.trajectoryAnalysis;
+    lines.push("LAYER: TRAJECTORY");
+    lines.push(`  Verdict: ${t.verdict}`);
+    lines.push(`  ${t.verdictText}`);
+    if (t.changePercent !== null) lines.push(`  QoQ change: ${t.changePercent > 0 ? "+" : ""}${Math.round(t.changePercent)}%`);
+    lines.push("");
+  }
+
+  if (commentIntel && commentIntel.totalCommentsAnalysed >= 10) {
+    lines.push("LAYER: COMMENTS");
+    const signals = Object.entries(commentIntel.emotionalSignals).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    lines.push(`  Emotional signals: ${signals.map(([k, v]) => `${k} ${v}%`).join(", ")}`);
+    if (commentIntel.themes.length) lines.push(`  Top themes: ${commentIntel.themes.slice(0, 3).map((t) => t.name).join(", ")}`);
+    if (commentIntel.keyInsight) lines.push(`  Key insight: ${commentIntel.keyInsight.slice(0, 200)}`);
+    if (commentIntel.videoIdeas.length) {
+      lines.push(`  Audience-requested: ${commentIntel.videoIdeas.slice(0, 3).map((v) => v.idea.slice(0, 60)).join("; ")}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+const SYNTHESIS_SYSTEM = `You are a YouTube channel performance analyst. You receive data from six analysis layers for a specific channel.
+
+Synthesize 3–5 cross-cutting, plain-English takeaways that CONNECT patterns across layers.
+
+Do NOT re-list each section. Look for:
+- Where multiple layers AGREE (compounding signal → double down)
+- Actionable contradictions (e.g. story-hooks hold retention best but the creator rarely posts them)
+- The single most reliable formula this channel has found
+- What audience + comment data says the creator should lean into next
+
+Rules:
+- Only include takeaways backed by n≥3 data points; skip low-confidence signals
+- Be specific — cite actual multipliers, percentages, and pattern names
+- Each takeaway should reference at least 2 layers
+- Headline: one honest verdict sentence citing the strongest cross-layer pattern
+
+Return ONLY valid JSON, no markdown fences:
+{
+  "headline": "One-sentence verdict citing the strongest cross-layer pattern",
+  "takeaways": [
+    {
+      "text": "Plain-English cross-cutting takeaway (1-2 sentences)",
+      "evidence": "The specific numbers backing this — cite multipliers, %, layer names",
+      "layers": ["packaging", "retention"]
+    }
+  ]
+}
+
+Valid layer names: "packaging", "retention", "growth", "audience", "cadence", "trajectory", "comments"`;
+
+export async function computeChannelSynthesis(
+  sp: SuccessPatterns,
+  commentIntel: CommentIntelligence | null,
+  channelTitle: string,
+): Promise<ChannelSynthesis> {
+  const t0 = Date.now();
+  const prompt = buildSynthesisInput(sp, commentIntel, channelTitle);
+  console.log("[synthesis] Calling Claude. prompt=%d chars", prompt.length);
+
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1500,
+    system: SYNTHESIS_SYSTEM,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  console.log("[synthesis] Done in %dms. input=%d output=%d", Date.now() - t0, message.usage.input_tokens, message.usage.output_tokens);
+
+  const raw = message.content[0].type === "text" ? message.content[0].text : "";
+  const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+
+  const parsed = JSON.parse(text) as { headline: string; takeaways: ChannelSynthesis["takeaways"] };
+  return {
+    headline: String(parsed.headline ?? ""),
+    takeaways: (parsed.takeaways ?? []).slice(0, 5),
+    generatedAt: new Date().toISOString(),
+  };
+}
 
 export async function generateContentBrief(
   summary: ChannelSummary,

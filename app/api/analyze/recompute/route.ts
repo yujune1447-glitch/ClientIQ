@@ -6,9 +6,11 @@ import {
   computeRetentionAnalysis,
   computeGrowthAnalysis,
   computeAudienceAnalysis,
+  computeCadenceAnalysis,
+  computeTrajectoryAnalysis,
   type ScoredResult,
 } from "@/lib/process";
-import { generateContentBrief } from "@/lib/claude";
+import { generateContentBrief, computeChannelSynthesis } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { saveSnapshot } from "@/lib/snapshot";
 import type {
@@ -198,6 +200,8 @@ export async function POST(request: NextRequest) {
       trafficMap,
       summary.successPatterns.retentionAnalysis,
     );
+    summary.successPatterns.cadenceAnalysis = computeCadenceAnalysis(allScored);
+    summary.successPatterns.trajectoryAnalysis = computeTrajectoryAnalysis(allScored);
   }
 
   console.log("[recompute] Summary rebuilt: topPerformers=%d bottomPerformers=%d allVideos=%d",
@@ -221,6 +225,20 @@ export async function POST(request: NextRequest) {
   // Audience analysis — uses demographics (from DB) + commentIntelligence (just computed)
   if (summary.successPatterns) {
     summary.successPatterns.audienceAnalysis = computeAudienceAnalysis(demographics, commentIntelligence);
+  }
+
+  // ── Channel synthesis — cross-layer, zero googleapis calls ───────────────
+  if (summary.successPatterns) {
+    try {
+      summary.successPatterns.synthesis = await computeChannelSynthesis(
+        summary.successPatterns,
+        commentIntelligence,
+        channelInfo.title,
+      );
+      console.log("[recompute] Synthesis OK: takeaways=%d", summary.successPatterns.synthesis.takeaways.length);
+    } catch (err) {
+      console.error("[recompute] Synthesis failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
   }
 
   // ── Brief generation (Claude API — not googleapis) ────────────────────────

@@ -14,6 +14,7 @@ import { GrowthSection } from "@/app/components/GrowthSection";
 import { AudienceSection } from "@/app/components/AudienceSection";
 import { CadenceSection } from "@/app/components/CadenceSection";
 import { TrajectorySection } from "@/app/components/TrajectorySection";
+import { ChannelSynthesisSection } from "@/app/components/ChannelSynthesisSection";
 import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
@@ -36,8 +37,66 @@ export interface AnalysisData {
 
 type Period = "weekly" | "monthly" | "alltime";
 
-const PLAN_INIT_PROMPT =
-  "You are a content planning partner for this YouTube creator. You have their channel data in your context — top performers, engagement patterns, audience signals.\n\nOpen with 3–5 short concept suggestions grounded specifically in this channel’s top-performing videos. Look at what titles, topics, and patterns have worked here, then suggest concepts that extend or remix those patterns.\n\nFormat each concept as:\n• [Title] — [one-line hook describing the video’s core angle]\n\nNothing more. No outlines, no hook breakdowns, no length estimates yet.\n\nAfter the list, end with exactly this: \"Pick one, tell me to combine or adjust, or tell me what you actually want to make instead.\"\n\nOnce the creator commits to a single concept (picked from your list or their own idea):\n- Ask at most 1–2 brief clarifying questions only if something critical is missing (e.g. target length if not obvious from the concept)\n- Then generate a full content structure using exactly these markdown headers in order: **Title**, **Hook**, **Optimal Length**, **Outline**, **Why it’ll work**";
+function buildPlanInitPrompt(summary: ChannelSummary, commentIntel: CommentIntelligence | null): string {
+  const sp = summary.successPatterns;
+  const { channel } = summary;
+
+  const dataLines: string[] = [];
+
+  if (sp?.synthesis?.headline) {
+    dataLines.push(`Channel verdict: ${sp.synthesis.headline}`);
+    dataLines.push("");
+  }
+
+  if (sp?.synthesis?.takeaways.length) {
+    dataLines.push("Proven patterns on this channel:");
+    for (const t of sp.synthesis.takeaways) {
+      dataLines.push(`• ${t.text} — evidence: ${t.evidence}`);
+    }
+    dataLines.push("");
+  } else if (sp) {
+    const confCats = sp.titleCategories.filter((c) => !c.lowConfidence).sort((a, b) => b.viewMultiplier - a.viewMultiplier);
+    const confDurs = sp.durationBuckets.filter((b) => !b.lowConfidence).sort((a, b) => b.viewMultiplier - a.viewMultiplier);
+    if (confCats[0]) dataLines.push(`• Best title format: ${confCats[0].name} (${confCats[0].viewMultiplier.toFixed(1)}× median, n=${confCats[0].n})`);
+    if (confDurs[0]) dataLines.push(`• Optimal length: ${confDurs[0].label} (${confDurs[0].viewMultiplier.toFixed(1)}×)`);
+    if (sp.cadenceAnalysis?.bestDay && !sp.cadenceAnalysis.thinData) {
+      dataLines.push(`• Best posting day: ${sp.cadenceAnalysis.bestDay} (${sp.cadenceAnalysis.bestDayMultiplier?.toFixed(1)}×)`);
+    }
+    if (sp.trajectoryAnalysis && sp.trajectoryAnalysis.verdict !== "insufficient_data") {
+      dataLines.push(`• Trajectory: ${sp.trajectoryAnalysis.verdict}`);
+    }
+    dataLines.push("");
+  }
+
+  if (commentIntel && commentIntel.totalCommentsAnalysed >= 10 && commentIntel.videoIdeas.length) {
+    dataLines.push("Audience-requested topics:");
+    for (const idea of commentIntel.videoIdeas.slice(0, 3)) {
+      dataLines.push(`• ${idea.idea} (${idea.estimatedDemand} demand)`);
+    }
+    dataLines.push("");
+  }
+
+  const contextBlock = dataLines.length > 0
+    ? `## Channel Performance Grounding\n\n${dataLines.join("\n")}\n---\n\n`
+    : "";
+
+  return `${contextBlock}You are a content planning partner for ${channel.title}. You have their channel performance data in your context — top performers, engagement patterns, audience signals, and the proven patterns above.
+
+Open with 3–5 short concept suggestions GROUNDED in this channel’s actual performance data. Each concept must tie back to one of the proven patterns shown above. Cite the specific evidence when presenting each concept.
+
+Format each concept as:
+• [Title] — [one-line hook] _(ties to: [specific data point])_
+
+Nothing more. No outlines, no hook breakdowns, no length estimates yet.
+
+After the list, end with exactly this: "Pick one, tell me to combine or adjust, or tell me what you actually want to make instead."
+
+Once the creator commits to a single concept (picked from your list or their own idea):
+- Ask at most 1–2 brief clarifying questions only if something critical is missing (e.g. target length if not obvious from the concept)
+- Then generate a full content structure using exactly these markdown headers in order: **Title**, **Hook**, **Optimal Length**, **Outline**, **Why it’ll work**
+
+The **Why it’ll work** section MUST cite specific metrics from the channel data above — multipliers, retention percentages, audience signals, cadence patterns — not generic best practices. Example: "This uses the question-title format that averages 2.1× your channel median. Posted on your strongest day, it targets your 18–24 core audience who drive 67% of your curious emotional signals."`;
+}
 
 function extractIdeas(text: string): Array<{ title: string; hook: string; length: string; structure: string; why_it_works: string }> {
   const normalized = text.replace(/\r/g, "");
@@ -424,7 +483,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   useEffect(() => {
     if (tab !== "ideas" || planInitRef.current) return;
     planInitRef.current = true;
-    const hidden: ChatMsg = { role: "user", content: PLAN_INIT_PROMPT, hidden: true };
+    const hidden: ChatMsg = { role: "user", content: buildPlanInitPrompt(summary, analysis.commentIntel), hidden: true };
     setPlanMsgs([hidden]);
     planAppend([hidden]);
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -728,8 +787,14 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
       {tab === "analysis" && (
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
 
-          {/* TL;DR */}
-          {sp && sp.tldr.length > 0 && (
+          {/* Synthesis (AI cross-layer) — replaces static TL;DR when available */}
+          {sp?.synthesis ? (
+            <ChannelSynthesisSection
+              synthesis={sp.synthesis}
+              totalVideos={sp.totalVideos}
+              channelMedianViews={sp.channelMedianViews}
+            />
+          ) : sp && sp.tldr.length > 0 && (
             <div className="bg-[#111113] border border-[#1f1f22] rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
                 <Sparkles className="w-3.5 h-3.5 text-[#ff3040]" />
