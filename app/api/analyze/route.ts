@@ -12,6 +12,8 @@ import {
   fetchRetentionSubsBatch,
   fetchTrafficBatch,
   fetchDemographics,
+  type VideoRetentionSubs,
+  type TrafficSources,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
 import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis } from "@/lib/process";
@@ -21,9 +23,15 @@ import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/l
 import { saveSnapshot } from "@/lib/snapshot";
 import { fetchInstagramData, refreshPageToken } from "@/lib/instagram";
 import { fetchTikTokData, refreshTikTokToken } from "@/lib/tiktok";
-import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary } from "@/types";
+import { QuotaBudget } from "@/lib/quota";
+import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary, RawVideo } from "@/types";
 
 export const maxDuration = 300;
+
+// Configurable via env — change without code deploy
+const QUOTA_BUDGET     = parseInt(process.env.QUOTA_BUDGET            ?? "8000");
+const STALE_ANALYTICS_DAYS = parseInt(process.env.STALE_ANALYTICS_DAYS ?? "7");
+const VIDEO_STALE_DAYS     = parseInt(process.env.VIDEO_STALE_DAYS     ?? "30");
 
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -36,9 +44,17 @@ export async function GET(request: NextRequest) {
       };
 
       try {
+        // ── Auth + connections ─────────────────────────────────────────────
         const userId = request.cookies.get("user_id")?.value;
         console.log("[analyze] Request received. user_id_from_cookie=%s", userId ?? "MISSING");
         if (!userId) { emit({ event: "error", message: "Not authenticated" }); return; }
+
+        const forceRefresh = request.nextUrl.searchParams.get("force") === "true";
+        const quota = new QuotaBudget(QUOTA_BUDGET);
+
+        if (forceRefresh) {
+          console.log("[analyze] Force-refresh mode — all caches bypassed");
+        }
 
         const supabase = createAdminClient();
 
@@ -97,22 +113,72 @@ export async function GET(request: NextRequest) {
         };
 
         await maybeRefresh();
+        quota.charge("channels.list");
         emit({ event: "step_done", step: "connect" });
 
-        // ── Pull all video IDs (full pagination) ──────────────────────────
+        // ── Load previous raw_videos for incremental video-details fetch ───
+        // Only video details for new uploads + recently published need refreshing.
+        // Old stable videos reuse the last analysis's cached data (0 quota cost).
+        const prevRawVideoMap = new Map<string, RawVideo>();
+        if (!forceRefresh) {
+          const { data: prevAnalysis } = await supabase
+            .from("analyses")
+            .select("raw_videos")
+            .eq("channel_id", conn.channel_id)
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (prevAnalysis?.raw_videos) {
+            for (const v of prevAnalysis.raw_videos as RawVideo[]) {
+              prevRawVideoMap.set(v.id, v);
+            }
+            console.log(`[analyze] Loaded ${prevRawVideoMap.size} cached video details from previous analysis`);
+          }
+        }
+
+        // ── Pull all video IDs (playlistItems.list, 1 unit/50-video page) ─
+        // NOTE: playlistItems.list is already used here — NOT search.list (100 units/call).
         emit({ event: "step_start", step: "pull" });
         const channelStats = await getChannelInfo(accessToken);
         const videoIds = await getAllVideoIds(channelStats.uploadsPlaylistId, accessToken, (count) => {
           emit({ event: "videos_found", count });
-        });
+        }, quota);
+
+        // ── Incremental video details: only fetch new uploads + recent videos ─
+        // Videos published > VIDEO_STALE_DAYS ago are stable; reuse cached details.
+        const videoStaleCutoff = Date.now() - VIDEO_STALE_DAYS * 86_400_000;
+        const idsToFetch: string[] = forceRefresh
+          ? videoIds
+          : videoIds.filter((id) => {
+              const prev = prevRawVideoMap.get(id);
+              if (!prev) return true; // new upload since last analysis
+              return new Date(prev.snippet.publishedAt).getTime() > videoStaleCutoff;
+            });
+
+        const idsToFetchSet = new Set(idsToFetch);
 
         await maybeRefresh();
-        const rawVideos = await getVideoDetails(videoIds, accessToken, (current, total) => {
+        const freshRawVideos = await getVideoDetails(idsToFetch, accessToken, (current, total) => {
           emit({ event: "details_progress", current, total });
-        });
+        }, quota);
+
+        // Merge: stale-but-valid cache + freshly fetched, maintaining playlist order
+        const rawVideoMap = new Map<string, RawVideo>();
+        for (const id of videoIds) {
+          const prev = prevRawVideoMap.get(id);
+          if (prev && !idsToFetchSet.has(id)) rawVideoMap.set(id, prev);
+        }
+        for (const v of freshRawVideos) rawVideoMap.set(v.id, v);
+        const rawVideos = videoIds
+          .map((id) => rawVideoMap.get(id))
+          .filter((v): v is RawVideo => v !== undefined);
+
+        const newVideoCount = videoIds.filter((id) => !prevRawVideoMap.has(id)).length;
+        console.log(`[analyze] Video details: ${freshRawVideos.length} fetched, ${rawVideos.length - freshRawVideos.length} from cache, ${newVideoCount} new uploads`);
         emit({ event: "step_done", step: "pull" });
 
-        // ── Analytics (paginated, 500 rows per page) ──────────────────────
+        // ── Channel Analytics (YouTube Analytics API — separate 200k/day quota) ─
         emit({ event: "step_start", step: "analytics" });
         await maybeRefresh();
         const analyticsMap = await getChannelAnalytics(accessToken, (page, total) => {
@@ -204,7 +270,7 @@ export async function GET(request: NextRequest) {
           emit({ event: "step_skip", step: "instagram" });
         }
 
-        // ── Score + rank all videos (single pass) ─────────────────────────
+        // ── Score + rank all videos ───────────────────────────────────────
         emit({ event: "step_start", step: "process" });
         const channelInfo: YouTubeChannel = {
           id: conn.channel_id,
@@ -219,7 +285,7 @@ export async function GET(request: NextRequest) {
         const scored = scoreVideos(rawVideos, analyticsMap);
         emit({ event: "step_done", step: "process" });
 
-        // ── Fetch comments for top 10 + bottom 10 only (parallel, batched) ─
+        // ── Comments for top 10 + bottom 10 (1 unit each) ────────────────
         emit({ event: "step_start", step: "rank" });
         const commentTargetIds = [
           ...scored.scored.slice(0, 10),
@@ -229,10 +295,12 @@ export async function GET(request: NextRequest) {
         await maybeRefresh();
         const commentsMap = await fetchCommentsParallel(commentTargetIds, accessToken, (done, total) => {
           emit({ event: "comments_progress", done, total });
-        });
+        }, quota);
         emit({ event: "step_done", step: "rank" });
 
-        // ── Extended analytics: retention, subs, traffic, demographics, captions ─
+        // ── Extended analytics: retention, subs, traffic, captions ────────
+        // Analytics API (separate 200k/day quota) — only re-fetch stale rows.
+        // Captions (Data API, expensive) — never re-fetch any previously-attempted video.
         emit({ event: "step_start", step: "extended_analytics" });
         const allVideoIds = scored.scored.map((v) => v.id);
         const CAPTION_N = parseInt(process.env.CAPTION_N ?? "10");
@@ -241,50 +309,104 @@ export async function GET(request: NextRequest) {
           ...scored.scored.slice(-CAPTION_N).reverse(),
         ].map((v) => v.id);
 
+        // Find rows that are fresh enough to skip Analytics API re-fetch.
+        // On first run this is empty; on re-run it covers most/all rows.
+        const staleAnalyticsThreshold = new Date(
+          Date.now() - STALE_ANALYTICS_DAYS * 86_400_000
+        ).toISOString();
+
+        const { data: freshAnalyticsData } = await supabase
+          .from("video_analytics")
+          .select("video_id, relative_retention, subs_gained, subs_lost, traffic_sources")
+          .eq("channel_id", conn.channel_id)
+          .eq("user_id", userId)
+          .gte("updated_at", staleAnalyticsThreshold);
+
+        const freshAnalyticsIds = forceRefresh
+          ? new Set<string>()
+          : new Set((freshAnalyticsData ?? []).map((r) => r.video_id as string));
+
+        console.log(`[analyze] Analytics freshness: ${freshAnalyticsIds.size}/${allVideoIds.length} rows fresh (≤${STALE_ANALYTICS_DAYS}d), skipping API re-fetch for those`);
+
         await maybeRefresh();
 
-        const [retentionSubsMap, trafficMap, demographics] = await Promise.all([
-          fetchRetentionSubsBatch(allVideoIds, accessToken),
-          fetchTrafficBatch(allVideoIds, accessToken),
+        // Fetch only stale/missing rows from Analytics API
+        const [apiRetentionSubsMap, apiTrafficMap, demographics] = await Promise.all([
+          fetchRetentionSubsBatch(allVideoIds, accessToken, freshAnalyticsIds),
+          fetchTrafficBatch(allVideoIds, accessToken, freshAnalyticsIds),
           fetchDemographics(accessToken),
         ]);
 
-        // Load existing caption statuses for this channel so we never re-fetch
-        const { data: existingRows } = await supabase
+        // Merge API results with cached DB rows to get complete maps
+        const retentionSubsMap = new Map<string, VideoRetentionSubs>(apiRetentionSubsMap);
+        const trafficMap = new Map<string, TrafficSources>(apiTrafficMap);
+        for (const row of freshAnalyticsData ?? []) {
+          if (!retentionSubsMap.has(row.video_id) && row.subs_gained !== null) {
+            retentionSubsMap.set(row.video_id, {
+              relativeRetention: row.relative_retention ?? null,
+              subsGained: row.subs_gained ?? 0,
+              subsLost: row.subs_lost ?? 0,
+            });
+          }
+          if (!trafficMap.has(row.video_id) && row.traffic_sources) {
+            trafficMap.set(row.video_id, row.traffic_sources as TrafficSources);
+          }
+        }
+
+        // Load caption statuses for ALL videos in channel.
+        // Skip any video where caption_status is set ('fetched', 'unavailable', 'failed').
+        // Never re-attempt unavailable/failed captions — that's what burned the quota.
+        const { data: existingCaptionRows } = await supabase
           .from("video_analytics")
           .select("video_id, caption_status")
           .eq("channel_id", conn.channel_id)
-          .eq("user_id", userId);
+          .eq("user_id", userId)
+          .not("caption_status", "is", null);
+
         const cachedCaptionStatus = new Map(
-          (existingRows ?? [])
-            .filter((r) => r.caption_status !== null)
-            .map((r) => [r.video_id, r.caption_status as string]),
+          (existingCaptionRows ?? []).map((r) => [r.video_id, r.caption_status as string]),
         );
 
-        // Fetch captions for uncached targets only (sequential to stay well within quota)
+        // Caption fetch — sequential, quota-guarded.
+        // Returns a result only for videos we actually attempted (not cached).
+        // Budget check happens BEFORE each call; if the budget would be exceeded, abort cleanly.
         const captionResults = new Map<string, { status: string; text: string | null; lang: string | null }>();
-        const captionDebug = { eligible: captionTargetIds.length, alreadyCached: 0, fetched: 0, unavailable: 0, failed: 0 };
+        const captionDebug = {
+          eligible: captionTargetIds.length,
+          alreadyCached: 0,
+          fetched: 0,
+          unavailable: 0,
+          failed: 0,
+          budgetBlocked: 0,
+        };
 
         for (const videoId of captionTargetIds) {
           if (cachedCaptionStatus.has(videoId)) {
             captionDebug.alreadyCached++;
             continue;
           }
+          // Hard abort before spending captions.list (50 units) on a budget-blown run
+          if (quota.willExceed("captions.list")) {
+            captionDebug.budgetBlocked++;
+            console.warn(`[analyze] Quota guard: skipping caption fetch for ${videoId} (${quota.remaining} units remaining)`);
+            continue;
+          }
           await maybeRefresh();
-          const result = await fetchCaption(videoId, accessToken);
+          const result = await fetchCaption(videoId, accessToken, quota);
           captionResults.set(videoId, result);
           if (result.status === "fetched") captionDebug.fetched++;
           else if (result.status === "unavailable") captionDebug.unavailable++;
           else captionDebug.failed++;
         }
 
-        // Upsert 1: retention + subs + traffic for all videos (no caption columns — preserves existing)
+        // Upsert 1: retention + subs + traffic — ONLY for rows we just fetched from API.
+        // Rows in freshAnalyticsIds already have up-to-date data in DB; skip them.
         const now = new Date().toISOString();
         const analyticsRows = allVideoIds
-          .filter((id) => retentionSubsMap.has(id) || trafficMap.has(id))
+          .filter((id) => apiRetentionSubsMap.has(id) || apiTrafficMap.has(id))
           .map((videoId) => {
-            const rs = retentionSubsMap.get(videoId);
-            const tf = trafficMap.get(videoId);
+            const rs = apiRetentionSubsMap.get(videoId);
+            const tf = apiTrafficMap.get(videoId);
             return {
               video_id: videoId,
               channel_id: conn.channel_id,
@@ -302,7 +424,7 @@ export async function GET(request: NextRequest) {
           if (upsertErr) console.error("[analyze] video_analytics upsert error:", upsertErr.message);
         }
 
-        // Upsert 2: caption data for fetched targets (only caption columns)
+        // Upsert 2: caption data for newly fetched targets only (caption columns only)
         for (const [videoId, result] of captionResults.entries()) {
           const { error: capErr } = await supabase
             .from("video_analytics")
@@ -331,17 +453,22 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // ── Quota summary log ─────────────────────────────────────────────
+        console.log(quota.toLog());
         const analyticsDebugSummary = {
           totalVideos: allVideoIds.length,
-          retentionSubsFetched: retentionSubsMap.size,
-          trafficFetched: trafficMap.size,
+          retentionSubsFetched: apiRetentionSubsMap.size,
+          retentionSubsCached: retentionSubsMap.size - apiRetentionSubsMap.size,
+          trafficFetched: apiTrafficMap.size,
+          trafficCached: trafficMap.size - apiTrafficMap.size,
           demographicsFetched: !!demographics?.length,
           captions: captionDebug,
+          quota: quota.toJSON(),
         };
         console.log("[analyze] Extended analytics:", JSON.stringify(analyticsDebugSummary));
         emit({ event: "step_done", step: "extended_analytics", analytics: analyticsDebugSummary });
 
-        // ── Query caption texts for hook analysis (top/bottom performers) ─
+        // ── Query caption texts for hook analysis ─────────────────────────
         const performerIds = [
           ...scored.scored.slice(0, 10).map((v) => v.id),
           ...scored.scored.slice(-10).map((v) => v.id),
@@ -355,7 +482,7 @@ export async function GET(request: NextRequest) {
           (captionRows ?? []).map((r) => [r.video_id, { status: r.caption_status ?? "unavailable", text: r.caption_text ?? null }])
         );
 
-        // ── Build summary + store raw + call Claude ───────────────────────
+        // ── Build summary + call Claude ───────────────────────────────────
         const summary = buildSummary(scored, commentsMap, channelInfo);
         if (summary.successPatterns) {
           summary.successPatterns.hookAnalysis = computeHookAnalysis(
@@ -462,7 +589,7 @@ export async function GET(request: NextRequest) {
         }
 
         emit({ event: "step_done", step: "save" });
-        emit({ event: "complete", analysisId: analysis.id });
+        emit({ event: "complete", analysisId: analysis.id, quotaSummary: quota.toJSON() });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Analysis failed";
         console.error("[analyze] Unhandled error:", msg);

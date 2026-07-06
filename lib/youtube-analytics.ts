@@ -22,11 +22,15 @@ export interface VideoRetentionSubs {
 export async function fetchRetentionSubsBatch(
   videoIds: string[],
   accessToken: string,
+  skipIds: Set<string> = new Set(),
 ): Promise<Map<string, VideoRetentionSubs>> {
   const map = new Map<string, VideoRetentionSubs>();
+  const toFetch = videoIds.filter((id) => !skipIds.has(id));
+  if (!toFetch.length) return map;
+  console.log(`[yt-analytics] fetchRetentionSubsBatch: ${toFetch.length}/${videoIds.length} to fetch (${skipIds.size} fresh in DB)`);
 
-  for (let i = 0; i < videoIds.length; i += BATCH_SIZE) {
-    const batch = videoIds.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+    const batch = toFetch.slice(i, i + BATCH_SIZE);
     const base = {
       ids: "channel==mine",
       dimensions: "video",
@@ -69,11 +73,15 @@ export type TrafficSources = Record<string, number>;
 export async function fetchTrafficBatch(
   videoIds: string[],
   accessToken: string,
+  skipIds: Set<string> = new Set(),
 ): Promise<Map<string, TrafficSources>> {
   const map = new Map<string, TrafficSources>();
+  const toFetch = videoIds.filter((id) => !skipIds.has(id));
+  if (!toFetch.length) return map;
+  console.log(`[yt-analytics] fetchTrafficBatch: ${toFetch.length}/${videoIds.length} to fetch (${skipIds.size} fresh in DB)`);
 
-  for (let i = 0; i < videoIds.length; i += BATCH_SIZE) {
-    const batch = videoIds.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+    const batch = toFetch.slice(i, i + BATCH_SIZE);
 
     try {
       const rows = await analyticsQuery({

@@ -1,3 +1,5 @@
+import type { QuotaBudget } from "@/lib/quota";
+
 const YT = "https://www.googleapis.com/youtube/v3";
 const FIRST_N_SECONDS = 15;
 
@@ -15,13 +17,26 @@ interface CaptionTrack {
   trackKind: string;
 }
 
-export async function fetchCaption(videoId: string, accessToken: string): Promise<CaptionResult> {
-  // Step 1: list all caption tracks for the video
+// captions.list = 50 units, captions.download = 200 units.
+// Returns null (caller should skip) if the budget check fails BEFORE any API call is made,
+// so the caller can distinguish "not attempted due to budget" from a real result.
+export async function fetchCaption(
+  videoId: string,
+  accessToken: string,
+  quota?: QuotaBudget,
+): Promise<CaptionResult> {
+  if (quota?.willExceed("captions.list")) {
+    // Budget exhausted before we could even list tracks — caller should not persist this.
+    return { status: "failed", text: null, lang: null };
+  }
+
+  // Step 1: list all caption tracks for the video (50 units)
   let tracks: CaptionTrack[] = [];
   try {
     const res = await fetch(`${YT}/captions?part=snippet&videoId=${videoId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    quota?.charge("captions.list");
     if (!res.ok) return { status: "unavailable", text: null, lang: null };
     const data = await res.json();
     tracks = (data.items ?? []).map((item: { id: string; snippet: { language: string; trackKind: string } }) => ({
@@ -41,11 +56,17 @@ export async function fetchCaption(videoId: string, accessToken: string): Promis
     tracks.find((t) => t.trackKind === "asr") ??
     tracks[0];
 
-  // Step 2: download and parse
+  // Step 2: download and parse (200 units) — skip if budget exhausted
+  if (quota?.willExceed("captions.download")) {
+    console.warn(`[captions] Budget exhausted before download for ${videoId} — marking unavailable`);
+    return { status: "unavailable", text: null, lang: null };
+  }
+
   try {
     const res = await fetch(`${YT}/captions/${preferred.id}?tfmt=srt`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    quota?.charge("captions.download");
 
     if (!res.ok) {
       // 403 on ASR is normal and expected — mark unavailable, not failed
