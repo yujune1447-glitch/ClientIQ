@@ -160,10 +160,12 @@ function AnalyzingContent() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col">
       <nav className="border-b border-[#1f1f22] px-6 py-4 flex items-center gap-2 max-w-7xl mx-auto w-full">
-        <div className="w-7 h-7 bg-[#ff3040] rounded-md flex items-center justify-center">
-          <Zap className="w-4 h-4 text-white fill-white" />
-        </div>
-        <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+        <a href="/workspace" title="Go to Overview" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <div className="w-7 h-7 bg-[#ff3040] rounded-md flex items-center justify-center">
+            <Zap className="w-4 h-4 text-white fill-white" />
+          </div>
+          <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+        </a>
         <a
           href="/workspace"
           className="ml-auto text-xs text-zinc-500 hover:text-zinc-300 transition-colors"

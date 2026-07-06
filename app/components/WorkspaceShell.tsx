@@ -337,12 +337,16 @@ export default function WorkspaceShell({
     <div className="flex h-screen overflow-hidden bg-[#09090b] text-white">
       {/* ── Sidebar ── */}
       <aside className="w-60 shrink-0 flex flex-col h-full border-r border-[#1f1f22] bg-[#0d0d0f] overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-[#1f1f22] shrink-0">
+        <button
+          onClick={() => { setMainView("dashboard"); setAiPanelOpen(false); }}
+          title="Go to Overview"
+          className="flex items-center gap-2 px-4 py-4 border-b border-[#1f1f22] shrink-0 text-left hover:bg-[#161618] transition-colors"
+        >
           <div className="w-6 h-6 bg-[#ff3040] rounded flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-white fill-white" />
           </div>
           <span className="font-semibold text-[14px] tracking-tight">CreatorIQ</span>
-        </div>
+        </button>
 
         <div className="flex-1 overflow-y-auto py-2 space-y-1">
           {/* Overview */}
