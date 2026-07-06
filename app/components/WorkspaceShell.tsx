@@ -45,6 +45,10 @@ interface IgConn {
 interface TtConn {
   displayName: string;
   avatarUrl: string | null;
+  followerCount: number;
+  followingCount: number;
+  likesCount: number;
+  videoCount: number;
 }
 
 interface Props {
@@ -330,6 +334,8 @@ export default function WorkspaceShell({
   } else {
     centerContent = effectiveAnalysis ? (
       <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="tiktok" />
+    ) : ttConn ? (
+      <TikTokConnectedCard conn={ttConn} />
     ) : (
       <EmptyAccountView name="TikTok" href="/api/auth/tiktok" />
     );
@@ -732,6 +738,48 @@ export default function WorkspaceShell({
           </div>
         </aside>
       )}
+    </div>
+  );
+}
+
+function TikTokConnectedCard({ conn }: { conn: TtConn }) {
+  const fmt = (n: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+  const metrics = [
+    { label: "Followers", value: conn.followerCount },
+    { label: "Following", value: conn.followingCount },
+    { label: "Likes", value: conn.likesCount },
+    { label: "Videos", value: conn.videoCount },
+  ];
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="w-full max-w-md px-6">
+        <div className="bg-[#111113] border border-[#1f1f22] rounded-xl p-6">
+          <div className="flex items-center gap-4">
+            {conn.avatarUrl ? (
+              <img src={conn.avatarUrl} alt="" className="w-14 h-14 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
+                <Music2 className="w-6 h-6 text-white" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-base font-semibold text-white truncate">{conn.displayName}</p>
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                TikTok connected
+              </span>
+            </div>
+          </div>
+          <div className="mt-6 grid grid-cols-4 gap-3">
+            {metrics.map((m) => (
+              <div key={m.label} className="text-center">
+                <p className="text-lg font-semibold text-white">{fmt(m.value)}</p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">{m.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

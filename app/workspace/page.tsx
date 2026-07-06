@@ -32,7 +32,7 @@ export default async function WorkspacePage({
       .order("created_at", { ascending: false }),
     supabase.from("youtube_connections").select("channel_title, channel_thumbnail, channel_handle, channel_id").eq("user_id", userId).maybeSingle(),
     supabase.from("instagram_connections").select("username, profile_picture_url").eq("user_id", userId).maybeSingle(),
-    supabase.from("tiktok_connections").select("display_name, avatar_url").eq("user_id", userId).maybeSingle(),
+    supabase.from("tiktok_connections").select("display_name, avatar_url, follower_count, following_count, likes_count, video_count").eq("user_id", userId).maybeSingle(),
     supabase.from("channel_snapshots").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
   ]);
 
@@ -90,7 +90,18 @@ export default async function WorkspacePage({
           : null
       }
       igConn={igConn ? { username: igConn.username, profilePictureUrl: igConn.profile_picture_url } : null}
-      ttConn={ttConn ? { displayName: ttConn.display_name, avatarUrl: ttConn.avatar_url } : null}
+      ttConn={
+        ttConn
+          ? {
+              displayName: ttConn.display_name,
+              avatarUrl: ttConn.avatar_url,
+              followerCount: ttConn.follower_count ?? 0,
+              followingCount: ttConn.following_count ?? 0,
+              likesCount: ttConn.likes_count ?? 0,
+              videoCount: ttConn.video_count ?? 0,
+            }
+          : null
+      }
       snapshots={(snapshots ?? []) as ChannelSnapshot[]}
       instagramError={instagram_error}
       tiktokError={tiktok_error}
