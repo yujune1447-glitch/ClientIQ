@@ -89,6 +89,13 @@ YouTube Studio + Meta Business Suite + TikTok Studio unified into one dashboard,
 - Each platform (YouTube/Instagram/TikTok) should follow the same data contract into the analysis layer so Tab 1/2/3 UI components stay platform-agnostic
 - Favor server components for data fetching, client components only where interactivity is required (AI panel, Kanban board, modals)
 
+## Established standards (do not re-derive)
+- **Stats: always MEDIAN, never mean.** The channel has extreme view outliers (viral videos) that skew means badly. Every per-group metric (day-of-week, time-of-day, duration bucket, title category, retention) uses median. Confidence-gate any pattern with n<3 (mark `lowConfidence` / hide from headline comparisons).
+- **YouTube quota discipline.** Never re-pull data already cached in the DB. Enumerate a channel's videos via the uploads playlist (`playlistItems.list`, 1 unit/page) — never `search.list` (100 units). Never re-download captions for a video that already has a `caption_status` ('fetched' | 'unavailable' | 'failed'). Incremental video-details fetch only for new/recent uploads; stable old videos reuse cached rows.
+- **Recompute vs Re-analyze.** Recompute regenerates the summary/brief/analysis layers purely from cached DB data (analyses + video_analytics + snapshots) with **zero** YouTube API calls. Only Re-analyze (`/analyzing?reanalyze=1`) hits the YouTube API. Keep the recompute path free of any googleapis call.
+- **Analysis sections** follow the collapsible full-width pattern with confidence badges (thin-data / low-confidence indicators), consistent with existing Cadence/Retention/Growth/Trajectory sections.
+- **Feedback loop phasing.** Phase 1 (capture: table + link UX + matching) is built. Phase 3 (feeding outcomes into `buildPlanInitPrompt` / AI consumption) waits until real outcome data actually exists — do not wire it up preemptively.
+
 ## Workflow rules (added 2026-07-03)
 - Before reporting any task complete, run npm run build yourself and confirm no errors — don't rely on Jake to catch syntax/type errors.
 - Prefer fewer, well-scoped prompts over many small back-and-forth ones for low-risk changes (layout, copy, non-logic UI).
