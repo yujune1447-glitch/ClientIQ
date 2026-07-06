@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
-const SCOPES = "user.info.basic,user.info.profile,video.list";
+const SCOPES = "user.info.basic,user.info.profile,user.info.stats";
 
 export function GET() {
   const state = crypto.randomBytes(16).toString("hex");
