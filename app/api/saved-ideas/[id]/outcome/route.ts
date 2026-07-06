@@ -121,28 +121,18 @@ export async function POST(
   const raw: RawVideo | undefined = rawVideos.find((v) => v.id === videoId);
   const onChannel = !!scored || !!raw;
 
-  // ── Not on channel yet → hold as pending (Phase 2 resolves on next analysis) ─
+  // ── Not found on the creator's channel → reject, persist NOTHING. ──────────
+  // Keeps the card linkable so the user can immediately try a different URL,
+  // and keeps foreign/competitor videos out of the proprietary dataset. A
+  // genuinely-just-posted own video links once the next analysis caches it.
   if (!onChannel) {
-    const outcome = await writeOutcome(supabase, {
-      ideaId,
-      userId,
-      platform: "youtube",
-      postedUrl,
-      postedVideoId: videoId,
-      performanceSnapshot: {},
-      primaryMetric: null,
-      channelBaseline: null,
-      performanceMultiple: null,
-      videoAgeDays: null,
-      verdict: "pending",
-      captureSource: "cache",
-    });
-    if ("error" in outcome) return NextResponse.json({ error: outcome.error }, { status: 500 });
-    return NextResponse.json({
-      idea: outcome.idea,
-      outcome: outcome.row,
-      note: "This video isn't on your channel yet — it'll grade automatically after your next analysis.",
-    });
+    return NextResponse.json(
+      {
+        error:
+          "We don't see this video on your channel. Check it's a video you posted — or link it after your next analysis picks it up.",
+      },
+      { status: 422 },
+    );
   }
 
   // ── Snapshot from cache ──────────────────────────────────────────────────

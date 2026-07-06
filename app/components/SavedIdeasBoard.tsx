@@ -90,7 +90,6 @@ export function SavedIdeasBoard({
   const [captureUrl, setCaptureUrl] = useState("");
   const [captureSaving, setCaptureSaving] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [captureNote, setCaptureNote] = useState<string | null>(null);
   const captureBackdropRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -119,7 +118,7 @@ export function SavedIdeasBoard({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (captureIdea) { setCaptureIdea(null); setCaptureUrl(""); setCaptureError(null); setCaptureNote(null); }
+      if (captureIdea) { setCaptureIdea(null); setCaptureUrl(""); setCaptureError(null); }
       else if (selectedIdea) closeModal();
     };
     if (selectedIdea || captureIdea) window.addEventListener("keydown", onKey);
@@ -194,21 +193,18 @@ export function SavedIdeasBoard({
     setCaptureIdea(idea);
     setCaptureUrl("");
     setCaptureError(null);
-    setCaptureNote(null);
   };
 
   const closeCapture = () => {
     setCaptureIdea(null);
     setCaptureUrl("");
     setCaptureError(null);
-    setCaptureNote(null);
   };
 
   const submitCapture = async (payload: { posted_url?: string; posted_video_id?: string; not_posted?: boolean }) => {
     if (!captureIdea) return;
     setCaptureSaving(true);
     setCaptureError(null);
-    setCaptureNote(null);
     try {
       const res = await fetch(`/api/saved-ideas/${captureIdea.id}/outcome`, {
         method: "POST",
@@ -216,13 +212,11 @@ export function SavedIdeasBoard({
         body: JSON.stringify(payload),
       });
       const bodyJson = await res.json().catch(() => ({}));
+      // On rejection (e.g. 422 not-on-channel) or failure: surface the error but
+      // keep the popover + input open so the user can immediately try another URL.
       if (!res.ok) throw new Error(bodyJson.error ?? `HTTP ${res.status}`);
       setIdeas((prev) => prev.map((i) => (i.id === bodyJson.idea.id ? bodyJson.idea : i)));
-      if (bodyJson.note) {
-        setCaptureNote(bodyJson.note);
-      } else {
-        closeCapture();
-      }
+      closeCapture();
     } catch (err) {
       setCaptureError(err instanceof Error ? err.message : "Capture failed");
     } finally {
@@ -297,7 +291,8 @@ export function SavedIdeasBoard({
                       </div>
 
                       {key === "done" &&
-                        (idea.posted_video_id || idea.outcome_verdict === "not_posted" ? (
+                        (idea.posted_video_id ? (
+                          // Valid on-channel outcome linked → locked chip + View post.
                           <div className="border-t border-[#1f1f22] px-4 py-2 flex items-center gap-2">
                             <VerdictChip verdict={idea.outcome_verdict} />
                             {idea.posted_url && (
@@ -313,13 +308,21 @@ export function SavedIdeasBoard({
                             )}
                           </div>
                         ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); openCapture(idea); }}
-                            className="w-full border-t border-[#1f1f22] px-4 py-2 flex items-center gap-1.5 text-left text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-[#161618] transition-colors"
-                          >
-                            <Link2 className="w-3 h-3 shrink-0" />
-                            Did you post this? <span className="text-[#ff3040] font-medium">Link it →</span>
-                          </button>
+                          // No valid link yet (unlinked, or marked not-posted) → keep the affordance.
+                          <div className="w-full border-t border-[#1f1f22] px-4 py-2 flex items-center gap-2">
+                            {idea.outcome_verdict === "not_posted" && <VerdictChip verdict="not_posted" />}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openCapture(idea); }}
+                              className="flex items-center gap-1.5 text-left text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                              <Link2 className="w-3 h-3 shrink-0" />
+                              {idea.outcome_verdict === "not_posted" ? (
+                                <span className="text-[#ff3040] font-medium">Actually, link it →</span>
+                              ) : (
+                                <span>Did you post this? <span className="text-[#ff3040] font-medium">Link it →</span></span>
+                              )}
+                            </button>
+                          </div>
                         ))}
 
                       <div className="border-t border-[#1f1f22] px-4 py-2 flex items-center justify-between">
@@ -564,80 +567,65 @@ export function SavedIdeasBoard({
                 {captureIdea.title}
               </p>
 
-              {captureNote ? (
-                <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5">
-                  <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-amber-300 leading-relaxed">{captureNote}</p>
+              {/* Paste URL */}
+              <div>
+                <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
+                  Paste the YouTube URL
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={captureUrl}
+                    onChange={(e) => setCaptureUrl(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && captureUrl.trim() && !captureSaving) submitCapture({ posted_url: captureUrl }); }}
+                    placeholder="https://youtube.com/watch?v=…"
+                    autoFocus
+                    className="flex-1 bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 text-[13px] text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-[#ff3040]/50 transition-colors"
+                  />
+                  <button
+                    onClick={() => submitCapture({ posted_url: captureUrl })}
+                    disabled={captureSaving || !captureUrl.trim()}
+                    className="px-3.5 py-2.5 rounded-xl text-[13px] font-medium bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1.5"
+                  >
+                    {captureSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Link"}
+                  </button>
                 </div>
-              ) : (
-                <>
-                  {/* Paste URL */}
-                  <div>
-                    <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
-                      Paste the YouTube URL
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={captureUrl}
-                        onChange={(e) => setCaptureUrl(e.target.value)}
-                        placeholder="https://youtube.com/watch?v=…"
-                        className="flex-1 bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 text-[13px] text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-[#ff3040]/50 transition-colors"
-                      />
+              </div>
+
+              {/* Pick from recent uploads (from cached summary.allVideos — zero fetch) */}
+              {recentVideos.length > 0 && (
+                <div>
+                  <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
+                    …or pick from your recent uploads
+                  </label>
+                  <div className="max-h-48 overflow-y-auto space-y-1 border border-[#27272a] rounded-xl p-1.5">
+                    {recentVideos.map((v) => (
                       <button
-                        onClick={() => submitCapture({ posted_url: captureUrl })}
-                        disabled={captureSaving || !captureUrl.trim()}
-                        className="px-3.5 py-2.5 rounded-xl text-[13px] font-medium bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1.5"
+                        key={v.id}
+                        onClick={() => submitCapture({ posted_video_id: v.id })}
+                        disabled={captureSaving}
+                        className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[#161618] disabled:opacity-40 transition-colors flex items-center gap-2"
                       >
-                        {captureSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Link"}
+                        <span className="text-[12px] text-zinc-300 truncate flex-1">{v.title}</span>
+                        <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">{fmt(v.viewCount)}</span>
                       </button>
-                    </div>
+                    ))}
                   </div>
-
-                  {/* Pick from recent uploads (from cached summary.allVideos — zero fetch) */}
-                  {recentVideos.length > 0 && (
-                    <div>
-                      <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
-                        …or pick from your recent uploads
-                      </label>
-                      <div className="max-h-48 overflow-y-auto space-y-1 border border-[#27272a] rounded-xl p-1.5">
-                        {recentVideos.map((v) => (
-                          <button
-                            key={v.id}
-                            onClick={() => submitCapture({ posted_video_id: v.id })}
-                            disabled={captureSaving}
-                            className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[#161618] disabled:opacity-40 transition-colors flex items-center gap-2"
-                          >
-                            <span className="text-[12px] text-zinc-300 truncate flex-1">{v.title}</span>
-                            <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">{fmt(v.viewCount)}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {captureError && <p className="text-xs text-red-400">{captureError}</p>}
-                </>
+                </div>
               )}
+
+              {/* Rejection/failure stays inline — input above remains open for a retry. */}
+              {captureError && <p className="text-xs text-red-400 leading-relaxed">{captureError}</p>}
             </div>
 
             <div className="px-5 py-3.5 border-t border-[#1f1f22] flex items-center justify-between">
-              {captureNote ? (
-                <button
-                  onClick={closeCapture}
-                  className="ml-auto px-4 py-1.5 rounded-lg text-[13px] font-medium bg-[#ff3040] hover:bg-[#e02030] text-white transition-colors"
-                >
-                  Got it
-                </button>
-              ) : (
-                <button
-                  onClick={() => submitCapture({ not_posted: true })}
-                  disabled={captureSaving}
-                  className="text-[12px] text-zinc-600 hover:text-zinc-400 disabled:opacity-40 transition-colors"
-                >
-                  I didn&apos;t make this
-                </button>
-              )}
+              <button
+                onClick={() => submitCapture({ not_posted: true })}
+                disabled={captureSaving}
+                className="text-[12px] text-zinc-600 hover:text-zinc-400 disabled:opacity-40 transition-colors"
+              >
+                I didn&apos;t make this
+              </button>
             </div>
           </div>
         </div>
