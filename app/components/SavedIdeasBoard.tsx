@@ -316,9 +316,15 @@ export function SavedIdeasBoard({
 
                       {key === "done" &&
                         (idea.posted_video_id ? (
-                          // Valid on-channel outcome linked → locked chip + View post.
+                          // Linked → chip + re-link (never a dead-end) + View post.
                           <div className="border-t border-[#1f1f22] px-4 py-2 flex items-center gap-2">
                             <VerdictChip verdict={idea.outcome_verdict} />
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openCapture(idea); }}
+                              className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors"
+                            >
+                              Re-link
+                            </button>
                             {idea.posted_url && (
                               <a
                                 href={idea.posted_url}
