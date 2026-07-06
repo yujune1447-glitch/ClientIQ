@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, X, MessageSquare } from "lucide-react";
+import { Loader2, X, MessageSquare, Link2, TrendingUp, TrendingDown, Minus, Clock } from "lucide-react";
 
 type Status = "to_make" | "in_progress" | "done";
+type Verdict = "overperformed" | "on_par" | "underperformed" | "pending" | "not_posted";
 
 interface SavedIdea {
   id: string;
@@ -16,6 +17,16 @@ interface SavedIdea {
   status: Status;
   source: "ai" | "manual";
   created_at: string;
+  posted_video_id: string | null;
+  posted_url: string | null;
+  outcome_verdict: Verdict | null;
+}
+
+export interface RecentVideo {
+  id: string;
+  title: string;
+  viewCount: number;
+  publishedAt: string;
 }
 
 interface EditDraft {
@@ -38,6 +49,12 @@ const PLATFORM_COLORS: Record<string, string> = {
   tiktok: "text-cyan-400 bg-cyan-500/10",
 };
 
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
 function toDraft(idea: SavedIdea): EditDraft {
   return {
     title: idea.title ?? "",
@@ -51,9 +68,11 @@ function toDraft(idea: SavedIdea): EditDraft {
 export function SavedIdeasBoard({
   platform,
   onOpenChat,
+  recentVideos = [],
 }: {
   platform?: string;
   onOpenChat?: (platform: string) => void;
+  recentVideos?: RecentVideo[];
 }) {
   const [ideas, setIdeas] = useState<SavedIdea[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +85,13 @@ export function SavedIdeasBoard({
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+
+  const [captureIdea, setCaptureIdea] = useState<SavedIdea | null>(null);
+  const [captureUrl, setCaptureUrl] = useState("");
+  const [captureSaving, setCaptureSaving] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captureNote, setCaptureNote] = useState<string | null>(null);
+  const captureBackdropRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,10 +117,14 @@ export function SavedIdeasBoard({
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeModal(); };
-    if (selectedIdea) window.addEventListener("keydown", onKey);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (captureIdea) { setCaptureIdea(null); setCaptureUrl(""); setCaptureError(null); setCaptureNote(null); }
+      else if (selectedIdea) closeModal();
+    };
+    if (selectedIdea || captureIdea) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIdea]);
+  }, [selectedIdea, captureIdea]);
 
   const openModal = (idea: SavedIdea) => {
     setSelectedIdea(idea);
@@ -157,6 +187,46 @@ export function SavedIdeasBoard({
       // status unchanged on error
     } finally {
       setMovingId(null);
+    }
+  };
+
+  const openCapture = (idea: SavedIdea) => {
+    setCaptureIdea(idea);
+    setCaptureUrl("");
+    setCaptureError(null);
+    setCaptureNote(null);
+  };
+
+  const closeCapture = () => {
+    setCaptureIdea(null);
+    setCaptureUrl("");
+    setCaptureError(null);
+    setCaptureNote(null);
+  };
+
+  const submitCapture = async (payload: { posted_url?: string; posted_video_id?: string; not_posted?: boolean }) => {
+    if (!captureIdea) return;
+    setCaptureSaving(true);
+    setCaptureError(null);
+    setCaptureNote(null);
+    try {
+      const res = await fetch(`/api/saved-ideas/${captureIdea.id}/outcome`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const bodyJson = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(bodyJson.error ?? `HTTP ${res.status}`);
+      setIdeas((prev) => prev.map((i) => (i.id === bodyJson.idea.id ? bodyJson.idea : i)));
+      if (bodyJson.note) {
+        setCaptureNote(bodyJson.note);
+      } else {
+        closeCapture();
+      }
+    } catch (err) {
+      setCaptureError(err instanceof Error ? err.message : "Capture failed");
+    } finally {
+      setCaptureSaving(false);
     }
   };
 
@@ -225,6 +295,32 @@ export function SavedIdeasBoard({
                           </p>
                         )}
                       </div>
+
+                      {key === "done" &&
+                        (idea.posted_video_id || idea.outcome_verdict === "not_posted" ? (
+                          <div className="border-t border-[#1f1f22] px-4 py-2 flex items-center gap-2">
+                            <VerdictChip verdict={idea.outcome_verdict} />
+                            {idea.posted_url && (
+                              <a
+                                href={idea.posted_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="ml-auto text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                              >
+                                View post ↗
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openCapture(idea); }}
+                            className="w-full border-t border-[#1f1f22] px-4 py-2 flex items-center gap-1.5 text-left text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-[#161618] transition-colors"
+                          >
+                            <Link2 className="w-3 h-3 shrink-0" />
+                            Did you post this? <span className="text-[#ff3040] font-medium">Link it →</span>
+                          </button>
+                        ))}
 
                       <div className="border-t border-[#1f1f22] px-4 py-2 flex items-center justify-between">
                         <span
@@ -443,6 +539,127 @@ export function SavedIdeasBoard({
           </div>
         </div>
       )}
+
+      {/* ── Capture popover: link a Done idea to a real posted video ── */}
+      {captureIdea && (
+        <div
+          ref={captureBackdropRef}
+          onClick={(e) => { if (e.target === captureBackdropRef.current) closeCapture(); }}
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="bg-[#0f0f11] border border-[#27272a] rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#1f1f22]">
+              <Link2 className="w-3.5 h-3.5 text-[#ff3040]" />
+              <p className="text-[13px] font-semibold flex-1">Link this idea to a post</p>
+              <button
+                onClick={closeCapture}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-[#1c1c1f] transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-5 space-y-5">
+              <p className="text-[12px] text-zinc-500 leading-relaxed line-clamp-2">
+                {captureIdea.title}
+              </p>
+
+              {captureNote ? (
+                <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-300 leading-relaxed">{captureNote}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Paste URL */}
+                  <div>
+                    <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
+                      Paste the YouTube URL
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={captureUrl}
+                        onChange={(e) => setCaptureUrl(e.target.value)}
+                        placeholder="https://youtube.com/watch?v=…"
+                        className="flex-1 bg-[#111113] border border-[#27272a] rounded-xl px-3.5 py-2.5 text-[13px] text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-[#ff3040]/50 transition-colors"
+                      />
+                      <button
+                        onClick={() => submitCapture({ posted_url: captureUrl })}
+                        disabled={captureSaving || !captureUrl.trim()}
+                        className="px-3.5 py-2.5 rounded-xl text-[13px] font-medium bg-[#ff3040] hover:bg-[#e02030] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1.5"
+                      >
+                        {captureSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Link"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Pick from recent uploads (from cached summary.allVideos — zero fetch) */}
+                  {recentVideos.length > 0 && (
+                    <div>
+                      <label className="text-[9px] text-zinc-600 uppercase tracking-wider block mb-1.5">
+                        …or pick from your recent uploads
+                      </label>
+                      <div className="max-h-48 overflow-y-auto space-y-1 border border-[#27272a] rounded-xl p-1.5">
+                        {recentVideos.map((v) => (
+                          <button
+                            key={v.id}
+                            onClick={() => submitCapture({ posted_video_id: v.id })}
+                            disabled={captureSaving}
+                            className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[#161618] disabled:opacity-40 transition-colors flex items-center gap-2"
+                          >
+                            <span className="text-[12px] text-zinc-300 truncate flex-1">{v.title}</span>
+                            <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">{fmt(v.viewCount)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {captureError && <p className="text-xs text-red-400">{captureError}</p>}
+                </>
+              )}
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-[#1f1f22] flex items-center justify-between">
+              {captureNote ? (
+                <button
+                  onClick={closeCapture}
+                  className="ml-auto px-4 py-1.5 rounded-lg text-[13px] font-medium bg-[#ff3040] hover:bg-[#e02030] text-white transition-colors"
+                >
+                  Got it
+                </button>
+              ) : (
+                <button
+                  onClick={() => submitCapture({ not_posted: true })}
+                  disabled={captureSaving}
+                  className="text-[12px] text-zinc-600 hover:text-zinc-400 disabled:opacity-40 transition-colors"
+                >
+                  I didn&apos;t make this
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+function VerdictChip({ verdict }: { verdict: Verdict | null }) {
+  if (!verdict) return null;
+  const map: Record<Verdict, { label: string; cls: string; icon: React.ReactNode }> = {
+    overperformed: { label: "Overperformed", cls: "text-emerald-400 bg-emerald-500/10", icon: <TrendingUp className="w-3 h-3" /> },
+    on_par: { label: "On par", cls: "text-zinc-300 bg-zinc-500/10", icon: <Minus className="w-3 h-3" /> },
+    underperformed: { label: "Underperformed", cls: "text-red-400 bg-red-500/10", icon: <TrendingDown className="w-3 h-3" /> },
+    pending: { label: "Pending", cls: "text-amber-400 bg-amber-500/10", icon: <Clock className="w-3 h-3" /> },
+    not_posted: { label: "Not posted", cls: "text-zinc-600 bg-zinc-500/10", icon: <Minus className="w-3 h-3" /> },
+  };
+  const v = map[verdict];
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${v.cls}`}>
+      {v.icon}
+      {v.label}
+    </span>
   );
 }

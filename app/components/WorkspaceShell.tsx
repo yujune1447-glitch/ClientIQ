@@ -301,7 +301,16 @@ export default function WorkspaceShell({
         <div className="border-b border-[#1f1f22] px-6 py-4">
           <p className="text-sm font-semibold">Saved Ideas</p>
         </div>
-        <SavedIdeasBoard onOpenChat={(p) => openAccountWithNewChat(p as AccountType)} />
+        <SavedIdeasBoard
+          onOpenChat={(p) => openAccountWithNewChat(p as AccountType)}
+          recentVideos={
+            (effectiveAnalysis?.summary?.allVideos ?? [])
+              .slice()
+              .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+              .slice(0, 15)
+              .map((v) => ({ id: v.id, title: v.title, viewCount: v.viewCount, publishedAt: v.publishedAt }))
+          }
+        />
       </div>
     );
   } else if (mainView === "youtube") {
