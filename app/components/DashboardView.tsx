@@ -262,16 +262,9 @@ export function DashboardView({ analysis, snapshots, ytConn, igConn, ttConn }: P
               />
               <BigStatCard
                 label="Weekly Growth"
-                value={
-                  ytGrowth !== null
-                    ? `${ytGrowth >= 0 ? "+" : ""}${ytGrowth.toFixed(1)}%`
-                    : "—"
-                }
-                sub={
-                  ytGrowth !== null
-                    ? "YouTube subscribers, week over week"
-                    : "needs a second snapshot to compute"
-                }
+                value={ytGrowth !== null ? `${ytGrowth >= 0 ? "+" : ""}${ytGrowth.toFixed(1)}%` : "—"}
+                sub={ytGrowth !== null ? "YouTube subscribers, week over week" : undefined}
+                hint={ytGrowth === null ? "Needs ~a week of snapshots to compute." : undefined}
                 icon={
                   ytGrowth !== null && ytGrowth >= 0
                     ? <TrendingUp className="w-4 h-4 text-emerald-500" />
@@ -423,12 +416,14 @@ function BigStatCard({
   label,
   value,
   sub,
+  hint,
   icon,
   accent,
 }: {
   label: string;
   value: string;
-  sub: string;
+  sub?: string;
+  hint?: string;
   icon: React.ReactNode;
   accent?: string;
 }) {
@@ -438,8 +433,14 @@ function BigStatCard({
         {icon}
         <p className="text-[10px] uppercase tracking-wider font-medium">{label}</p>
       </div>
-      <p className={`text-2xl font-bold tabular-nums ${accent ?? "text-white"}`}>{value}</p>
-      <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">{sub}</p>
+      {hint ? (
+        <p className="text-[12px] text-zinc-500 leading-snug">{hint}</p>
+      ) : (
+        <>
+          <p className={`text-2xl font-bold tabular-nums ${accent ?? "text-white"}`}>{value}</p>
+          {sub && <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">{sub}</p>}
+        </>
+      )}
     </div>
   );
 }

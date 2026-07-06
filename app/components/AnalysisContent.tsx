@@ -541,6 +541,10 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const totalWatchHours = periodVideos.reduce((s, v) => {
     return s + ((v.averageViewDuration ?? 0) * v.viewCount) / 3600;
   }, 0);
+  // Watch-time (averageViewDuration) comes from the Analytics API. Analyses cached
+  // before that integration have it on no video — distinguish "predates metric"
+  // (show a hint) from "genuinely zero this period" (show "—").
+  const hasWatchTimeData = recentPool.some((v) => (v.averageViewDuration ?? 0) > 0);
   const subDelta = computeSubDelta(snapshots, period, createdAt);
 
   // Recent comments from most recently published videos
@@ -679,6 +683,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
                 label="Watch Time"
                 value={totalWatchHours > 0.1 ? `${totalWatchHours < 1000 ? totalWatchHours.toFixed(1) : fmt(Math.round(totalWatchHours))}h` : "—"}
                 sub="estimated hours"
+                hint={!hasWatchTimeData ? "Populates after your next full analysis" : undefined}
               />
               <StatBlock
                 label="Avg Views / Video"
@@ -1436,23 +1441,31 @@ function StatBlock({
   value,
   delta,
   sub,
+  hint,
 }: {
   label: string;
   value: string;
   delta?: number | null;
   sub?: string;
+  hint?: string;
 }) {
   return (
     <div className="flex-1 px-5 py-4 min-w-0">
       <p className="text-[11px] text-zinc-500 mb-2 truncate">{label}</p>
-      <p className="text-2xl font-bold tabular-nums text-white leading-none">{value}</p>
-      {delta != null ? (
-        <p className={`text-[11px] mt-1.5 font-medium ${delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-          {delta >= 0 ? "+" : ""}{fmt(Math.abs(delta))} {sub}
-        </p>
-      ) : sub ? (
-        <p className="text-[10px] text-zinc-600 mt-1.5 leading-tight">{sub}</p>
-      ) : null}
+      {hint ? (
+        <p className="text-[12px] text-zinc-500 leading-snug">{hint}</p>
+      ) : (
+        <>
+          <p className="text-2xl font-bold tabular-nums text-white leading-none">{value}</p>
+          {delta != null ? (
+            <p className={`text-[11px] mt-1.5 font-medium ${delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {delta >= 0 ? "+" : ""}{fmt(Math.abs(delta))} {sub}
+            </p>
+          ) : sub ? (
+            <p className="text-[10px] text-zinc-600 mt-1.5 leading-tight">{sub}</p>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
