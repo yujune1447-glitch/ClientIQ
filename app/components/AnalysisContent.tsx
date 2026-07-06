@@ -306,10 +306,19 @@ export function AnalysisContent({
   analysis,
   snapshots,
   platformFilter,
+  ttConn,
 }: {
   analysis: AnalysisData;
   snapshots: ChannelSnapshot[];
   platformFilter?: "youtube" | "instagram" | "tiktok";
+  ttConn?: {
+    displayName: string;
+    avatarUrl: string | null;
+    followerCount: number;
+    followingCount: number;
+    likesCount: number;
+    videoCount: number;
+  } | null;
 }) {
   const { summary, autopsy, igSummary, tikTokSummary, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
@@ -435,6 +444,38 @@ export function AnalysisContent({
                   </a>
                 ))}
               </div>
+            </div>
+          </>
+        ) : ttConn ? (
+          <>
+            <div className="flex items-center gap-4">
+              {ttConn.avatarUrl ? (
+                <img src={ttConn.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
+                  <Music2 className="w-5 h-5 text-white" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{ttConn.displayName}</p>
+                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  TikTok connected
+                </span>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-4 gap-3">
+              {[
+                { label: "Followers", value: fmt(ttConn.followerCount) },
+                { label: "Following", value: fmt(ttConn.followingCount) },
+                { label: "Likes", value: fmt(ttConn.likesCount) },
+                { label: "Videos", value: fmt(ttConn.videoCount) },
+              ].map((s) => (
+                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
+                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
+                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
+                </div>
+              ))}
             </div>
           </>
         ) : (

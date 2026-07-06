@@ -333,7 +333,7 @@ export default function WorkspaceShell({
     );
   } else {
     centerContent = effectiveAnalysis ? (
-      <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="tiktok" />
+      <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="tiktok" ttConn={ttConn} />
     ) : ttConn ? (
       <TikTokConnectedCard conn={ttConn} />
     ) : (
