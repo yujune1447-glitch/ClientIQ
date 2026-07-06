@@ -5,7 +5,7 @@ import type {
   VideoSubsStat, TrafficSourceBreakdown, GrowthAnalysis,
 } from "@/types";
 
-interface ScoredResult {
+export interface ScoredResult {
   scored: VideoWithScore[];
   averages: ChannelSummary["averages"];
   outliers: VideoWithScore[];
@@ -444,6 +444,7 @@ export function buildSummary(
     bottomPerformers,
     outliers,
     recentVideos,
+    allVideos: scored,
     totalVideosAnalysed: scored.length,
     dateRange,
     topCommenters: topCommenters.length > 0 ? topCommenters : undefined,

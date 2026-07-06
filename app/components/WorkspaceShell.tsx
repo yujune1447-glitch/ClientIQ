@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Zap, PlayCircle, Camera, Music2, LayoutDashboard,
   MessageSquare, ChevronDown, ChevronRight, AlertCircle,
-  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb, RefreshCw,
+  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb, RefreshCw, Database,
 } from "lucide-react";
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
@@ -103,6 +103,7 @@ export default function WorkspaceShell({
     tiktok: true,
   });
   const [clientAnalysis, setClientAnalysis] = useState<AnalysisData | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
 
   const effectiveAnalysis = selectedAnalysis ?? clientAnalysis;
   const effectiveAnalysisId = effectiveAnalysis?.id ?? selectedAnalysisId;
@@ -134,6 +135,26 @@ export default function WorkspaceShell({
       });
     } catch {
       // non-fatal: center will just stay empty if no analysis exists
+    }
+  };
+
+  const handleRecompute = async () => {
+    if (recomputing) return;
+    setRecomputing(true);
+    try {
+      const res = await fetch("/api/analyze/recompute", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "no_cache") {
+          alert("No cached data found. Run a full analysis first.");
+        }
+        return;
+      }
+      await fetchLatestAnalysis();
+    } catch {
+      // non-fatal
+    } finally {
+      setRecomputing(false);
     }
   };
 
@@ -563,13 +584,29 @@ export default function WorkspaceShell({
         {/* Settings + Re-analyze — pinned to sidebar bottom */}
         <div className="shrink-0 border-t border-[#1f1f22] px-2 py-2 space-y-0.5">
           {ytConn && (
-            <a
-              href="/analyzing"
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[12px] font-medium">Re-analyze</span>
-            </a>
+            <>
+              <a
+                href="/analyzing"
+                className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[12px] font-medium">Re-analyze</span>
+              </a>
+              <button
+                onClick={handleRecompute}
+                disabled={recomputing}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-500 hover:bg-[#161618] hover:text-zinc-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {recomputing ? (
+                  <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <Database className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span className="text-[12px] font-medium">
+                  {recomputing ? "Recomputing…" : "Recompute"}
+                </span>
+              </button>
+            </>
           )}
           <a
             href="/settings"
