@@ -757,3 +757,200 @@ export function computeAudienceAnalysis(
     emotionalSignals: hasCommentData ? commentIntel!.emotionalSignals : null,
   };
 }
+
+// ── Cadence Analysis ───────────────────────────────────────────────────────────
+
+import type { CadenceAnalysis, CadenceDayStat, FrequencyCorrelation, TrajectoryAnalysis, TrajectoryQuarter, TrajectoryVerdict } from "@/types";
+
+const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const TIME_SLOTS: Array<{ label: string; start: number; end: number }> = [
+  { label: "Morning (6–12)",    start: 6,  end: 12 },
+  { label: "Afternoon (12–18)", start: 12, end: 18 },
+  { label: "Evening (18–24)",   start: 18, end: 24 },
+  { label: "Night (0–6)",       start: 0,  end: 6  },
+];
+
+export function computeCadenceAnalysis(allScored: VideoWithScore[]): CadenceAnalysis {
+  const total = allScored.length;
+  const channelMedianViews = Math.round(median(allScored.map((v) => v.viewCount)));
+  const thinData = total < 20;
+
+  // Top performers = top decile or top 10, whichever is smaller
+  const topN = Math.min(10, Math.ceil(total * 0.1));
+  const topIds = new Set(allScored.slice(0, topN).map((v) => v.id));
+
+  // Group all videos by day-of-week
+  const dayGroups = new Map<number, VideoWithScore[]>();
+  const slotGroups = new Map<string, VideoWithScore[]>();
+
+  for (const v of allScored) {
+    const d = new Date(v.publishedAt);
+    const day = d.getUTCDay();
+    const hour = d.getUTCHours();
+    if (!dayGroups.has(day)) dayGroups.set(day, []);
+    dayGroups.get(day)!.push(v);
+    const slot = TIME_SLOTS.find((s) => hour >= s.start && hour < s.end)?.label ?? "Night (0–6)";
+    if (!slotGroups.has(slot)) slotGroups.set(slot, []);
+    slotGroups.get(slot)!.push(v);
+  }
+
+  const byDay: CadenceDayStat[] = WEEK_DAYS.map((day, i) => {
+    const group = dayGroups.get(i) ?? [];
+    const med = group.length > 0 ? Math.round(median(group.map((v) => v.viewCount))) : 0;
+    return {
+      day,
+      n: group.length,
+      medianViews: med,
+      relativeToChannel: channelMedianViews > 0 ? Math.round((med / channelMedianViews) * 100) / 100 : 1,
+      topPerformerCount: group.filter((v) => topIds.has(v.id)).length,
+      lowConfidence: group.length < 3,
+    };
+  }).filter((d) => d.n > 0);
+
+  // Best reliable day (n ≥ 3)
+  const reliableDays = byDay.filter((d) => !d.lowConfidence);
+  const bestDayStat = reliableDays.length > 0
+    ? reliableDays.reduce((a, b) => a.medianViews > b.medianViews ? a : b)
+    : null;
+
+  // Top-performer time slot
+  let topPerformerTimeSlot: string | null = null;
+  const slotTopCounts = TIME_SLOTS.map(({ label }) => {
+    const group = slotGroups.get(label) ?? [];
+    return { label, topCount: group.filter((v) => topIds.has(v.id)).length, n: group.length };
+  }).filter((s) => s.n > 0);
+  if (slotTopCounts.length > 1) {
+    const best = slotTopCounts.reduce((a, b) => a.topCount > b.topCount ? a : b);
+    if (best.topCount >= 2) topPerformerTimeSlot = best.label;
+  }
+
+  // Frequency-vs-performance correlation via calendar months
+  const monthGroups = new Map<string, VideoWithScore[]>();
+  for (const v of allScored) {
+    const d = new Date(v.publishedAt);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (!monthGroups.has(key)) monthGroups.set(key, []);
+    monthGroups.get(key)!.push(v);
+  }
+
+  let frequencyInsight = "";
+  let frequencyCorrelates: FrequencyCorrelation = "insufficient";
+
+  const monthStats = Array.from(monthGroups.values())
+    .map((vids) => ({ count: vids.length, medViews: Math.round(median(vids.map((v) => v.viewCount))) }));
+
+  if (monthStats.length >= 6) {
+    const sorted = [...monthStats].sort((a, b) => a.count - b.count);
+    const split = Math.floor(sorted.length / 3);
+    const lowFreq = sorted.slice(0, split);
+    const highFreq = sorted.slice(sorted.length - split);
+    if (lowFreq.length >= 2 && highFreq.length >= 2) {
+      const lowMed = Math.round(median(lowFreq.map((m) => m.medViews)));
+      const highMed = Math.round(median(highFreq.map((m) => m.medViews)));
+      const ratio = lowMed > 0 ? highMed / lowMed : 0;
+      if (ratio > 1.2) {
+        frequencyCorrelates = "more";
+        frequencyInsight = `Months with more uploads had higher median views (${fmt(highMed)} vs ${fmt(lowMed)}) — posting more often correlates with better reach on this channel.`;
+      } else if (ratio < 0.8) {
+        frequencyCorrelates = "less";
+        frequencyInsight = `Lighter posting months outperformed: ${fmt(lowMed)} median views when posting less vs ${fmt(highMed)} when posting more — fewer, more intentional uploads may work better here.`;
+      } else {
+        frequencyCorrelates = "none";
+        frequencyInsight = `No meaningful correlation between upload frequency and median views (${fmt(lowMed)} light vs ${fmt(highMed)} heavy months) — performance is driven by something other than cadence.`;
+      }
+    }
+  } else {
+    frequencyInsight = `Only ${monthStats.length} month${monthStats.length === 1 ? "" : "s"} of data — not enough to detect a frequency-vs-performance pattern.`;
+  }
+
+  return {
+    totalVideos: total,
+    thinData,
+    channelMedianViews,
+    byDay,
+    bestDay: bestDayStat?.day ?? null,
+    bestDayMultiplier: bestDayStat ? Math.round(bestDayStat.relativeToChannel * 10) / 10 : null,
+    topPerformerTimeSlot,
+    frequencyInsight,
+    frequencyCorrelates,
+  };
+}
+
+// ── Trajectory Analysis ────────────────────────────────────────────────────────
+
+export function computeTrajectoryAnalysis(allScored: VideoWithScore[]): TrajectoryAnalysis {
+  // Sort chronologically
+  const sorted = [...allScored].sort(
+    (a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()
+  );
+
+  if (sorted.length === 0) {
+    return { quarters: [], verdict: "insufficient_data", verdictText: "No video data available.", recentMedianViews: null, priorMedianViews: null, changePercent: null };
+  }
+
+  // Group into calendar quarters
+  const quarterMap = new Map<string, VideoWithScore[]>();
+  for (const v of sorted) {
+    const d = new Date(v.publishedAt);
+    const q = Math.floor(d.getUTCMonth() / 3) + 1;
+    const key = `${d.getUTCFullYear()}-Q${q}`;
+    if (!quarterMap.has(key)) quarterMap.set(key, []);
+    quarterMap.get(key)!.push(v);
+  }
+
+  const quarters: TrajectoryQuarter[] = Array.from(quarterMap.entries())
+    .map(([key, videos]) => {
+      const [year, qLabel] = key.split("-");
+      const qNum = parseInt(qLabel.replace("Q", ""));
+      const monthStart = (qNum - 1) * 3 + 1;
+      return {
+        label: `Q${qNum} ${year}`,
+        startDate: `${year}-${String(monthStart).padStart(2, "0")}-01`,
+        n: videos.length,
+        medianViews: Math.round(median(videos.map((v) => v.viewCount))),
+      };
+    })
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  // Compare last two quarters with ≥ 2 videos each for the verdict
+  const reliableQ = quarters.filter((q) => q.n >= 2);
+  if (reliableQ.length < 2) {
+    return {
+      quarters,
+      verdict: "insufficient_data",
+      verdictText: `Only ${reliableQ.length} quarter${reliableQ.length === 1 ? "" : "s"} with enough videos — need at least two to determine trajectory.`,
+      recentMedianViews: null,
+      priorMedianViews: null,
+      changePercent: null,
+    };
+  }
+
+  const recent = reliableQ[reliableQ.length - 1];
+  const prior = reliableQ[reliableQ.length - 2];
+  const recentMedianViews = recent.medianViews;
+  const priorMedianViews = prior.medianViews;
+  const changePercent = priorMedianViews > 0
+    ? Math.round(((recentMedianViews - priorMedianViews) / priorMedianViews) * 100)
+    : null;
+
+  let verdict: TrajectoryVerdict;
+  let verdictText: string;
+
+  // Use 25% threshold — newer videos naturally have fewer total views due to less accumulation time,
+  // so a smaller threshold would flag cooling too readily.
+  if (changePercent === null) {
+    verdict = "insufficient_data";
+    verdictText = "Cannot compute trajectory — no prior period data.";
+  } else if (changePercent >= 25) {
+    verdict = "accelerating";
+    verdictText = `Accelerating: ${recent.label} videos median ${fmt(recentMedianViews)} views — ${changePercent}% above ${prior.label} (${fmt(priorMedianViews)}). Momentum is building.`;
+  } else if (changePercent <= -25) {
+    verdict = "cooling";
+    verdictText = `Cooling: ${recent.label} videos median ${fmt(recentMedianViews)} views — ${Math.abs(changePercent)}% below ${prior.label} (${fmt(priorMedianViews)}). Note: newer videos may not have had time to accumulate views.`;
+  } else {
+    verdict = "steady";
+    verdictText = `Steady: ${recent.label} median ${fmt(recentMedianViews)} views vs ${fmt(priorMedianViews)} in ${prior.label} — within normal variation.`;
+  }
+
+  return { quarters, verdict, verdictText, recentMedianViews, priorMedianViews, changePercent };
+}
