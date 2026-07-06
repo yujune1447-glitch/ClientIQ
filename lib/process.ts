@@ -2,6 +2,7 @@ import type {
   RawVideo, VideoAnalytics, VideoWithScore, ChannelSummary, YouTubeChannel,
   SuccessPatterns, TitleCategoryStat, TitleMechanicStat, DurationBucketStat, TldrBullet,
   HookEntry, HookAnalysis, RetentionVideoStat, RetentionAnalysis,
+  VideoSubsStat, TrafficSourceBreakdown, GrowthAnalysis,
 } from "@/types";
 
 interface ScoredResult {
@@ -447,5 +448,185 @@ export function buildSummary(
     dateRange,
     topCommenters: topCommenters.length > 0 ? topCommenters : undefined,
     successPatterns,
+  };
+}
+
+const ALGORITHM_SOURCES = new Set(["BROWSE_FEATURES", "SUGGESTED_VIDEOS", "RELATED_VIDEO"]);
+const SEARCH_SOURCES = new Set(["YT_SEARCH"]);
+const EXTERNAL_SOURCES = new Set(["EXT_URL", "NO_LINK_OTHER"]);
+const NOTIFICATION_SOURCES = new Set(["NOTIFICATION", "SUBSCRIBER"]);
+
+function parseTrafficSources(raw: Record<string, number>): TrafficSourceBreakdown {
+  let algorithm = 0, search = 0, external = 0, notifications = 0, other = 0;
+  for (const [k, v] of Object.entries(raw)) {
+    if (ALGORITHM_SOURCES.has(k)) algorithm += v;
+    else if (SEARCH_SOURCES.has(k)) search += v;
+    else if (EXTERNAL_SOURCES.has(k)) external += v;
+    else if (NOTIFICATION_SOURCES.has(k)) notifications += v;
+    else other += v;
+  }
+  const total = algorithm + search + external + notifications + other;
+  const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
+  return {
+    algorithm, search, external, notifications, other, total,
+    algorithmPct: pct(algorithm),
+    searchPct: pct(search),
+    externalPct: pct(external),
+    notificationsPct: pct(notifications),
+    otherPct: pct(other),
+  };
+}
+
+function mergeTraffic(sources: TrafficSourceBreakdown[]): TrafficSourceBreakdown | null {
+  if (!sources.length) return null;
+  let algorithm = 0, search = 0, external = 0, notifications = 0, other = 0;
+  for (const s of sources) {
+    algorithm += s.algorithm; search += s.search; external += s.external;
+    notifications += s.notifications; other += s.other;
+  }
+  const total = algorithm + search + external + notifications + other;
+  const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
+  return {
+    algorithm, search, external, notifications, other, total,
+    algorithmPct: pct(algorithm), searchPct: pct(search), externalPct: pct(external),
+    notificationsPct: pct(notifications), otherPct: pct(other),
+  };
+}
+
+function buildConversionInsight(topMedian: number, bottomMedian: number, n: number): string {
+  if (n < 5) return "";
+  let s = `Your top-performing videos gain a median of ${fmt(topMedian)} subscribers each.`;
+  if (bottomMedian > 0 && topMedian !== bottomMedian) {
+    if (topMedian >= bottomMedian * 1.5) {
+      const ratio = Math.round((topMedian / Math.max(bottomMedian, 1)) * 10) / 10;
+      s += ` That's ${ratio}× more than your bottom performers (${fmt(bottomMedian)}) — your best content is a subscriber machine, not just a views machine.`;
+    } else if (topMedian > bottomMedian) {
+      s += ` Your bottom performers pull ${fmt(bottomMedian)} — a narrower gap, so topic and hook quality matter more than format for conversion.`;
+    } else {
+      s += ` Interestingly, your bottom performers gain similar subscribers (${fmt(bottomMedian)}) — subscriber conversion and raw view performance aren't strongly correlated on your channel.`;
+    }
+  }
+  return s;
+}
+
+function buildTrafficInsight(agg: TrafficSourceBreakdown | null): string {
+  if (!agg || agg.total < 100) return "";
+  let s = `${agg.algorithmPct}% of your top videos' views come from YouTube's algorithm (browse + suggested).`;
+  if (agg.searchPct >= 20) {
+    s += ` Search drives ${agg.searchPct}% — your titles and topics have strong search intent.`;
+  } else if (agg.searchPct >= 10) {
+    s += ` Search contributes ${agg.searchPct}% — there's room to target more search-intent titles.`;
+  }
+  if (agg.externalPct >= 15) {
+    s += ` ${agg.externalPct}% arrives from external sources, suggesting real cross-platform reach.`;
+  }
+  if (agg.algorithmPct >= 65) {
+    s += ` You're algorithm-dependent — strong when YouTube favours you, vulnerable when it doesn't.`;
+  } else if (agg.searchPct + agg.externalPct >= 35) {
+    s += ` Your traffic is well-diversified across algorithm and owned sources.`;
+  }
+  return s;
+}
+
+function buildTrifectaInsight(allDiff: boolean, anyDiff: boolean): string {
+  if (allDiff) {
+    return "Your most-viewed, best-retained, and best-converting videos are three completely different videos. That's the 'views aren't everything' truth in hard data — viral reach, deep engagement, and subscriber conversion are pulling in different directions. The brief that targets all three is the brief worth making.";
+  }
+  if (anyDiff) {
+    return "Two of your three key signals — most viewed, best retained, and best converting — belong to different videos. There's a real tension here between content that spreads and content that converts.";
+  }
+  return "Your best content aligns across reach, retention, and conversion — a strong signal these topics and formats are your core growth flywheel.";
+}
+
+export function computeGrowthAnalysis(
+  topPerformers: VideoWithScore[],
+  bottomPerformers: VideoWithScore[],
+  allScored: VideoWithScore[],
+  retentionSubsMap: Map<string, { relativeRetention: number | null; subsGained: number; subsLost: number }>,
+  trafficMap: Map<string, Record<string, number>>,
+  retentionAnalysis: RetentionAnalysis | undefined,
+): GrowthAnalysis {
+  // ── Subscriber conversion ─────────────────────────────────────────────────
+  const allWithSubs: VideoSubsStat[] = allScored
+    .filter((v) => retentionSubsMap.has(v.id))
+    .map((v) => {
+      const s = retentionSubsMap.get(v.id)!;
+      return {
+        videoId: v.id,
+        title: v.title,
+        views: v.viewCount,
+        subsGained: s.subsGained,
+        subsLost: s.subsLost,
+        netSubs: s.subsGained - s.subsLost,
+        subsPerThousandViews: v.viewCount > 0 ? Math.round((s.subsGained / v.viewCount) * 10000) / 10 : 0,
+      };
+    });
+
+  const topSubsValues = topPerformers
+    .filter((v) => retentionSubsMap.has(v.id))
+    .map((v) => retentionSubsMap.get(v.id)!.subsGained);
+  const bottomSubsValues = bottomPerformers
+    .filter((v) => retentionSubsMap.has(v.id))
+    .map((v) => retentionSubsMap.get(v.id)!.subsGained);
+
+  const topMedianSubsGained = Math.round(median(topSubsValues));
+  const bottomMedianSubsGained = Math.round(median(bottomSubsValues));
+  const channelMedianSubsGained = Math.round(median(allWithSubs.map((v) => v.subsGained)));
+  const thinSubsData = allWithSubs.length < 5;
+
+  const topConverters = [...allWithSubs]
+    .sort((a, b) => b.subsGained - a.subsGained)
+    .slice(0, 10);
+
+  // ── Traffic sources ───────────────────────────────────────────────────────
+  const topVideosTraffic: GrowthAnalysis["topVideosTraffic"] = topPerformers
+    .filter((v) => trafficMap.has(v.id))
+    .slice(0, 8)
+    .map((v) => ({
+      videoId: v.id,
+      title: v.title,
+      views: v.viewCount,
+      sources: parseTrafficSources(trafficMap.get(v.id)!),
+    }));
+
+  const videosWithTrafficData = allScored.filter((v) => trafficMap.has(v.id)).length;
+  const thinTrafficData = topVideosTraffic.length < 3;
+  const aggregateTraffic = mergeTraffic(topVideosTraffic.map((v) => v.sources));
+
+  // ── Trifecta divergence ───────────────────────────────────────────────────
+  const mostViewedVideoId = allScored[0]?.id ?? null;
+  const mostViewedTitle = allScored[0]?.title ?? null;
+  const bestRetainedVideoId = retentionAnalysis?.bestRetainedVideo?.videoId ?? null;
+  const bestRetainedTitle = retentionAnalysis?.bestRetainedVideo?.title ?? null;
+  const bestConvertingVideoId = topConverters[0]?.videoId ?? null;
+  const bestConvertingTitle = topConverters[0]?.title ?? null;
+
+  const ids = [mostViewedVideoId, bestRetainedVideoId, bestConvertingVideoId].filter(Boolean) as string[];
+  const uniqueIds = new Set(ids);
+  const trifectaDiverge = ids.length === 3 && uniqueIds.size === 3;
+  const anyDiff = ids.length >= 2 && uniqueIds.size >= 2;
+
+  return {
+    videosWithSubsData: allWithSubs.length,
+    totalVideosAnalysed: allScored.length,
+    thinSubsData,
+    channelMedianSubsGained,
+    topMedianSubsGained,
+    bottomMedianSubsGained,
+    topConverters,
+    conversionInsight: buildConversionInsight(topMedianSubsGained, bottomMedianSubsGained, allWithSubs.length),
+    videosWithTrafficData,
+    thinTrafficData,
+    topVideosTraffic,
+    aggregateTraffic,
+    trafficInsight: buildTrafficInsight(aggregateTraffic),
+    mostViewedVideoId,
+    mostViewedTitle,
+    bestRetainedVideoId,
+    bestRetainedTitle,
+    bestConvertingVideoId,
+    bestConvertingTitle,
+    trifectaDiverge,
+    trifectaInsight: buildTrifectaInsight(trifectaDiverge, anyDiff),
   };
 }

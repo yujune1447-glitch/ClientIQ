@@ -112,6 +112,54 @@ export interface PostingTimingStat {
   byTimeOfDay: { slot: string; n: number; avgViews: number }[];
 }
 
+export interface VideoSubsStat {
+  videoId: string;
+  title: string;
+  views: number;
+  subsGained: number;
+  subsLost: number;
+  netSubs: number;
+  subsPerThousandViews: number;
+}
+
+export interface TrafficSourceBreakdown {
+  algorithm: number;
+  search: number;
+  external: number;
+  notifications: number;
+  other: number;
+  total: number;
+  algorithmPct: number;
+  searchPct: number;
+  externalPct: number;
+  notificationsPct: number;
+  otherPct: number;
+}
+
+export interface GrowthAnalysis {
+  videosWithSubsData: number;
+  totalVideosAnalysed: number;
+  thinSubsData: boolean;
+  channelMedianSubsGained: number;
+  topMedianSubsGained: number;
+  bottomMedianSubsGained: number;
+  topConverters: VideoSubsStat[];
+  conversionInsight: string;
+  videosWithTrafficData: number;
+  thinTrafficData: boolean;
+  topVideosTraffic: Array<{ videoId: string; title: string; views: number; sources: TrafficSourceBreakdown }>;
+  aggregateTraffic: TrafficSourceBreakdown | null;
+  trafficInsight: string;
+  mostViewedVideoId: string | null;
+  mostViewedTitle: string | null;
+  bestRetainedVideoId: string | null;
+  bestRetainedTitle: string | null;
+  bestConvertingVideoId: string | null;
+  bestConvertingTitle: string | null;
+  trifectaDiverge: boolean;
+  trifectaInsight: string;
+}
+
 export interface SuccessPatterns {
   channelMedianViews: number;
   totalVideos: number;
@@ -122,6 +170,7 @@ export interface SuccessPatterns {
   postingTiming: PostingTimingStat;
   hookAnalysis?: HookAnalysis;
   retentionAnalysis?: RetentionAnalysis;
+  growthAnalysis?: GrowthAnalysis;
 }
 
 export interface ChannelSummary {
