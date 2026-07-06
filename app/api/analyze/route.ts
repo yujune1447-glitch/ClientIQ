@@ -16,7 +16,7 @@ import {
   type TrafficSources,
 } from "@/lib/youtube-analytics";
 import { fetchCaption } from "@/lib/captions";
-import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis } from "@/lib/process";
+import { scoreVideos, buildSummary, computeHookAnalysis, computeRetentionAnalysis, computeGrowthAnalysis, computeAudienceAnalysis } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
 import { analyzeComments } from "@/lib/comment-intelligence";
 import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/lib/niche";
@@ -556,6 +556,10 @@ export async function GET(request: NextRequest) {
             keyInsight: "", generatedAt: new Date().toISOString(),
           };
         }
+        // Audience analysis uses commentIntelligence + demographics — compute after analyzeComments
+        if (summary.successPatterns) {
+          summary.successPatterns.audienceAnalysis = computeAudienceAnalysis(demographics ?? null, commentIntelligence);
+        }
         emit({ event: "step_done", step: "comments_intel" });
 
         emit({ event: "step_start", step: "save" });
@@ -576,10 +580,10 @@ export async function GET(request: NextRequest) {
         console.log("[analyze] Saving snapshot...");
         await saveSnapshot({ userId, channelId: conn.channel_id, analysisId: analysis.id, summary, rawVideos, commentIntelligence });
 
-        console.log("[analyze] Updating analysis with brief/autopsy/comment_intelligence...");
+        console.log("[analyze] Updating analysis with brief/autopsy/comment_intelligence/summary...");
         const { error: updateError } = await supabase
           .from("analyses")
-          .update({ brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary, comment_intelligence: commentIntelligence })
+          .update({ summary, brief, autopsy, instagram_summary: igSummary, tiktok_summary: tikTokSummary, comment_intelligence: commentIntelligence })
           .eq("id", analysis.id);
 
         if (updateError) {

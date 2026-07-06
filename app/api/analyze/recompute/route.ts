@@ -5,6 +5,7 @@ import {
   computeHookAnalysis,
   computeRetentionAnalysis,
   computeGrowthAnalysis,
+  computeAudienceAnalysis,
   type ScoredResult,
 } from "@/lib/process";
 import { generateContentBrief } from "@/lib/claude";
@@ -17,7 +18,7 @@ import type {
   InstagramSummary,
   TikTokSummary,
 } from "@/types";
-import type { VideoRetentionSubs, TrafficSources } from "@/lib/youtube-analytics";
+import type { VideoRetentionSubs, TrafficSources, DemographicPoint } from "@/lib/youtube-analytics";
 
 export const maxDuration = 300;
 
@@ -156,7 +157,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  console.log(`[recompute] DB rows loaded: retention=${retentionSubsMap.size} traffic=${trafficMap.size} captions=${captionDataMap.size}`);
+  // ── Load channel demographics from DB ────────────────────────────────────
+  const { data: demoRow } = await supabase
+    .from("channel_demographics")
+    .select("demographics")
+    .eq("channel_id", conn.channel_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const demographics = (demoRow?.demographics ?? null) as DemographicPoint[] | null;
+
+  console.log(`[recompute] DB rows loaded: retention=${retentionSubsMap.size} traffic=${trafficMap.size} captions=${captionDataMap.size} demographics=${demographics?.length ?? 0}`);
 
   // ── Build fresh summary (pure computation — no API calls) ─────────────────
   // buildSummary re-derives all title/duration/successPatterns from scored videos.
@@ -206,6 +216,11 @@ export async function POST(request: NextRequest) {
       audiencePersonas: [], topCommenters: [],
       keyInsight: "", generatedAt: new Date().toISOString(),
     };
+  }
+
+  // Audience analysis — uses demographics (from DB) + commentIntelligence (just computed)
+  if (summary.successPatterns) {
+    summary.successPatterns.audienceAnalysis = computeAudienceAnalysis(demographics, commentIntelligence);
   }
 
   // ── Brief generation (Claude API — not googleapis) ────────────────────────

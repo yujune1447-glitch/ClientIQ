@@ -136,6 +136,29 @@ export interface TrafficSourceBreakdown {
   otherPct: number;
 }
 
+export interface DemographicAgeBand {
+  label: string;
+  rawKey: string;
+  viewerPct: number;
+  malePct: number;
+  femalePct: number;
+}
+
+export interface AudienceAnalysis {
+  hasDemographicData: boolean;
+  ageBands: DemographicAgeBand[];
+  dominantAgeGroup: string | null;
+  dominantAgeGroupPct: number | null;
+  under25Pct: number | null;
+  malePct: number | null;
+  femalePct: number | null;
+  headlineStat: string;
+  personaConfirmation: string;
+  hasCommentData: boolean;
+  commentSentiment: { positive: number; neutral: number; negative: number } | null;
+  emotionalSignals: { excited: number; grateful: number; curious: number; confused: number; critical: number; requesting: number } | null;
+}
+
 export interface GrowthAnalysis {
   videosWithSubsData: number;
   totalVideosAnalysed: number;
@@ -171,6 +194,7 @@ export interface SuccessPatterns {
   hookAnalysis?: HookAnalysis;
   retentionAnalysis?: RetentionAnalysis;
   growthAnalysis?: GrowthAnalysis;
+  audienceAnalysis?: AudienceAnalysis;
 }
 
 export interface ChannelSummary {

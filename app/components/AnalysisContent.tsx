@@ -11,6 +11,7 @@ import { MarkRead } from "@/app/components/MarkRead";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
 import { RetentionSection } from "@/app/components/RetentionSection";
 import { GrowthSection } from "@/app/components/GrowthSection";
+import { AudienceSection } from "@/app/components/AudienceSection";
 import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
@@ -1042,6 +1043,15 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
           {sp?.growthAnalysis && (
             <GrowthSection
               analysis={sp.growthAnalysis}
+              onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
+            />
+          )}
+
+          {/* Audience */}
+          {sp?.audienceAnalysis && (
+            <AudienceSection
+              analysis={sp.audienceAnalysis}
+              commentIntel={analysis.commentIntel}
               onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
             />
           )}

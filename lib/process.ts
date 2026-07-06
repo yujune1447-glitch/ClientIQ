@@ -631,3 +631,129 @@ export function computeGrowthAnalysis(
     trifectaInsight: buildTrifectaInsight(trifectaDiverge, anyDiff),
   };
 }
+
+// ── Audience Analysis ──────────────────────────────────────────────────────────
+
+import type { DemographicPoint } from "@/lib/youtube-analytics";
+import type { AudienceAnalysis, DemographicAgeBand, CommentIntelligence } from "@/types";
+
+const AGE_ORDER = ["age13-17", "age18-24", "age25-34", "age35-44", "age45-54", "age55-64", "age65-"];
+const AGE_LABELS: Record<string, string> = {
+  "age13-17": "13–17", "age18-24": "18–24", "age25-34": "25–34",
+  "age35-44": "35–44", "age45-54": "45–54", "age55-64": "55–64", "age65-": "65+",
+};
+
+function buildPersonaConfirmation(
+  ageBands: DemographicAgeBand[],
+  under25Pct: number,
+  commentIntel: CommentIntelligence | null,
+): string {
+  if (!ageBands.length) return "";
+
+  const dominant = ageBands[0];
+  const personaText = commentIntel?.audiencePersonas?.map((p) => `${p.type} ${p.description}`).join(" ").toLowerCase() ?? "";
+  const personaIsYoung = /young|teen|student|gen.?z|millennial|18.?24|early.?career|college/i.test(personaText);
+  const personaIsOlder = /middle.?age|older|40|50|senior|professional|career|parent/i.test(personaText);
+
+  const confirmsYoung = personaIsYoung && under25Pct >= 50;
+  const divergesYoung = personaIsYoung && under25Pct < 30;
+  const confirmsOlder = personaIsOlder && (ageBands.find((b) => b.rawKey === "age35-44" || b.rawKey === "age45-54")?.viewerPct ?? 0) > 30;
+
+  if (confirmsYoung) {
+    return `Your comment tone reads young, and the data confirms it — ${under25Pct}% of your viewers are under 25. Content that speaks to early-stage life decisions, ambition, and identity will resonate across most of your audience.`;
+  }
+  if (divergesYoung) {
+    return `Your comments suggest a younger audience, but the data tells a different story: only ${under25Pct}% are under 25. Your dominant age group is ${dominant.label} at ${Math.round(dominant.viewerPct)}%. Your content may read as relatable to younger viewers while actually converting an older demographic.`;
+  }
+  if (confirmsOlder) {
+    return `Your comment analysis and demographics agree: your core audience is ${dominant.label} (${Math.round(dominant.viewerPct)}%). These viewers tend to be more deliberate and less driven by algorithmic impulse — quality and trust signals matter more than hooks designed for teens.`;
+  }
+  if (under25Pct >= 60) {
+    return `A clear majority of your audience — ${under25Pct}% — is under 25. This is a young-skewing channel, which affects thumbnail expectations, title register, and optimal video length.`;
+  }
+  if (under25Pct <= 20) {
+    return `Only ${under25Pct}% of your viewers are under 25. Your dominant age group is ${dominant.label} at ${Math.round(dominant.viewerPct)}%. This is a meaningful finding if your content style assumes a younger audience.`;
+  }
+  return `Your largest age group is ${dominant.label} at ${Math.round(dominant.viewerPct)}% of viewers — a broad but useful anchor for calibrating your content's assumed life context.`;
+}
+
+export function computeAudienceAnalysis(
+  demographics: DemographicPoint[] | null,
+  commentIntel: CommentIntelligence | null,
+): AudienceAnalysis {
+  const hasCommentData = !!(commentIntel && (commentIntel.themes.length > 0 || commentIntel.totalCommentsAnalysed > 0));
+
+  if (!demographics?.length) {
+    return {
+      hasDemographicData: false,
+      ageBands: [],
+      dominantAgeGroup: null,
+      dominantAgeGroupPct: null,
+      under25Pct: null,
+      malePct: null,
+      femalePct: null,
+      headlineStat: "",
+      personaConfirmation: "",
+      hasCommentData,
+      commentSentiment: hasCommentData ? commentIntel!.sentimentBreakdown : null,
+      emotionalSignals: hasCommentData ? commentIntel!.emotionalSignals : null,
+    };
+  }
+
+  // Aggregate viewerPercentage by age group × gender
+  const byAge = new Map<string, { male: number; female: number; other: number }>();
+  let totalMale = 0, totalFemale = 0;
+  for (const d of demographics) {
+    const entry = byAge.get(d.ageGroup) ?? { male: 0, female: 0, other: 0 };
+    if (d.gender === "male") { entry.male += d.viewerPercentage; totalMale += d.viewerPercentage; }
+    else if (d.gender === "female") { entry.female += d.viewerPercentage; totalFemale += d.viewerPercentage; }
+    else entry.other += d.viewerPercentage;
+    byAge.set(d.ageGroup, entry);
+  }
+
+  const ageBands: DemographicAgeBand[] = AGE_ORDER
+    .filter((k) => byAge.has(k))
+    .map((k) => {
+      const e = byAge.get(k)!;
+      const total = e.male + e.female + e.other;
+      return {
+        label: AGE_LABELS[k] ?? k,
+        rawKey: k,
+        viewerPct: Math.round(total * 10) / 10,
+        malePct: Math.round(e.male * 10) / 10,
+        femalePct: Math.round(e.female * 10) / 10,
+      };
+    })
+    .sort((a, b) => b.viewerPct - a.viewerPct);
+
+  const dominant = ageBands[0];
+  const under25Pct = Math.round(
+    ageBands.filter((b) => b.rawKey === "age13-17" || b.rawKey === "age18-24")
+      .reduce((s, b) => s + b.viewerPct, 0)
+  );
+  const malePct = Math.round(totalMale);
+  const femalePct = Math.round(totalFemale);
+
+  const headlineStat = dominant
+    ? `${Math.round(dominant.viewerPct)}% of your viewers are ${dominant.label}`
+    : "";
+
+  const sortedForChart = [...ageBands].sort(
+    (a, b) => AGE_ORDER.indexOf(a.rawKey) - AGE_ORDER.indexOf(b.rawKey)
+  );
+
+  return {
+    hasDemographicData: true,
+    ageBands: sortedForChart,
+    dominantAgeGroup: dominant?.label ?? null,
+    dominantAgeGroupPct: dominant ? Math.round(dominant.viewerPct) : null,
+    under25Pct,
+    malePct,
+    femalePct,
+    headlineStat,
+    personaConfirmation: buildPersonaConfirmation(ageBands, under25Pct, commentIntel),
+    hasCommentData,
+    commentSentiment: hasCommentData ? commentIntel!.sentimentBreakdown : null,
+    emotionalSignals: hasCommentData ? commentIntel!.emotionalSignals : null,
+  };
+}
