@@ -12,6 +12,8 @@ import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
 import { RetentionSection } from "@/app/components/RetentionSection";
 import { GrowthSection } from "@/app/components/GrowthSection";
 import { AudienceSection } from "@/app/components/AudienceSection";
+import { CadenceSection } from "@/app/components/CadenceSection";
+import { TrajectorySection } from "@/app/components/TrajectorySection";
 import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type {
   ChannelSummary, ContentAutopsy, VideoWithScore,
@@ -1052,6 +1054,23 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
             <AudienceSection
               analysis={sp.audienceAnalysis}
               commentIntel={analysis.commentIntel}
+              onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
+            />
+          )}
+
+          {/* Cadence */}
+          {sp?.cadenceAnalysis && (
+            <CadenceSection
+              analysis={sp.cadenceAnalysis}
+              onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
+            />
+          )}
+
+          {/* Trajectory */}
+          {sp?.trajectoryAnalysis && (
+            <TrajectorySection
+              analysis={sp.trajectoryAnalysis}
+              snapshots={snapshots}
               onTurnIntoBrief={(prompt) => { setPlanInput(prompt); setTab("ideas"); }}
             />
           )}
