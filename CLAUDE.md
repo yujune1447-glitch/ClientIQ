@@ -1,6 +1,9 @@
 ## Session start — read these first
 At the start of EVERY session, before doing anything else, read all files in the briefs/ folder (competitive brief, master brief, PROGRESS.md). Treat them as current context.
 
+## Dev server — Jake runs it, never touch it
+NEVER run, start, restart, or kill a dev server. A dev server always runs in Jake's own terminal on localhost:3000. Verify changes with `npm run build` (never `npm run dev`) and curl production or localhost:3000 directly. This supersedes the older "just run the dev server" lines below.
+
 - Token efficient — no unnecessary output
 - No comments in code unless logic is non-obvious
 - No scaffolding comments, placeholder text, or TODO comments
