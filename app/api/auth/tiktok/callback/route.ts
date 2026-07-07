@@ -70,6 +70,14 @@ export async function GET(request: NextRequest) {
 
   const supabase = createAdminClient();
 
+  const { data: existing } = await supabase
+    .from("tiktok_connections")
+    .select("refresh_token")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const refreshTokenToStore = refresh_token ?? existing?.refresh_token ?? null;
+
   const { error: connError } = await supabase.from("tiktok_connections").upsert(
     {
       user_id: userId,
@@ -82,7 +90,7 @@ export async function GET(request: NextRequest) {
       likes_count: user.likes_count ?? 0,
       video_count: user.video_count ?? 0,
       access_token,
-      refresh_token: refresh_token ?? null,
+      refresh_token: refreshTokenToStore,
       token_expires_at: new Date(Date.now() + (expires_in ?? 86400) * 1000).toISOString(),
       refresh_token_expires_at: refresh_expires_in
         ? new Date(Date.now() + refresh_expires_in * 1000).toISOString()
