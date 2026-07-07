@@ -1,3 +1,6 @@
+## Session start — read these first
+At the start of EVERY session, before doing anything else, read all files in the briefs/ folder (competitive brief, master brief, PROGRESS.md). Treat them as current context.
+
 - Token efficient — no unnecessary output
 - No comments in code unless logic is non-obvious
 - No scaffolding comments, placeholder text, or TODO comments
