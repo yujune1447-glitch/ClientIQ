@@ -636,6 +636,11 @@ export default function WorkspaceShell({
             <Settings className="w-3.5 h-3.5 shrink-0" />
             <span className="text-[12px] font-medium">Settings</span>
           </a>
+          <div className="flex items-center gap-2 px-3 pt-1.5 text-[11px] text-zinc-700">
+            <a href="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</a>
+            <span>·</span>
+            <a href="/terms" className="hover:text-zinc-400 transition-colors">Terms</a>
+          </div>
         </div>
       </aside>
 

@@ -18,6 +18,12 @@ export default async function LandingPage() {
           <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/privacy" className="text-sm text-zinc-500 hover:text-white transition-colors hidden sm:inline">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-sm text-zinc-500 hover:text-white transition-colors hidden sm:inline">
+            Terms
+          </Link>
           <a href="/api/auth/youtube" className="text-sm text-zinc-400 hover:text-white transition-colors">
             Sign in
           </a>
@@ -148,7 +154,12 @@ export default async function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[#1f1f22] py-6 px-6 text-center">
+      <footer className="border-t border-[#1f1f22] py-6 px-6 flex flex-col items-center gap-3">
+        <div className="flex items-center gap-4 text-xs text-zinc-500">
+          <Link href="/privacy" className="hover:text-zinc-300 transition-colors">Privacy Policy</Link>
+          <span className="text-zinc-800">·</span>
+          <Link href="/terms" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
+        </div>
         <p className="text-xs text-zinc-700">
           © 2025 CreatorIQ. Built for creators who take their channel seriously.
         </p>

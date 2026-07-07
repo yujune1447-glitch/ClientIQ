@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     return res;
   };
 
+  try {
   if (!stateCookie || stateParam !== stateCookie) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=state_mismatch`));
   }
@@ -105,4 +106,7 @@ export async function GET(request: NextRequest) {
   }
 
   return clearState(NextResponse.redirect(`${APP_URL}/workspace`));
+  } catch {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=unexpected`));
+  }
 }
