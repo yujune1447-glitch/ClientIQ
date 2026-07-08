@@ -8,11 +8,22 @@
 
 ## Current Focus
 **Launch strategy:** ship cross-platform, launch on the first two platforms ready (YouTube + TikTok). Don't wait on Instagram.
-**Critical path right now:** TikTok production submission. App is configured; verification and OAuth are done. Remaining: record the demo video, fill the app-review explanation box, and submit (starts the ~2-week clock).
+**Critical path right now:** TikTok is **in production review** — submitted, awaiting decision (~2-week clock running). Nothing to do but wait; build TikTok data/UI in parallel so it lights up on approval.
+**Instagram:** still blocked on Meta developer verification, **no timeline.**
+**YouTube:** daily quota currently **exhausted** — the 3 open verification items (watch-time card, weekly growth, Winning Hooks) still can't be checked until quota resets and a fresh pull runs.
 
 ---
 
 ## Just Shipped (recent, verified)
+- **Cross-platform `/home` landing hub** — public connection hub; pick a platform, then open the dashboard. Cached data only, no API calls.
+- **Removed YouTube auto-analysis-on-login** — logging in no longer triggers a full analysis; user drives it.
+- **Cross-platform marketing page copy** — landing positioned as the unified cross-platform tool, not YouTube-only.
+- **TikTok Live Stats + gated Channel Analysis tab** — TikTok view shows live stats; Channel Analysis gated behind production access (video.list scope).
+- **TikTok signup bootstrap** — dual-identity `users` table (nullable `google_id` / `tiktok_open_id`); TikTok-first users can sign up with no Google account.
+- **Fully isolated per-platform AI chat context** — each platform's chat is scoped to its own account, never mixed.
+- **Prompt caching + usage logging on all Claude API calls** — static system prompts cached; every call logs token usage.
+- **Re-analyze streaming/progress fix** — the three end-stage Claude calls now stream with live progress + a real synthesis step; kills the multi-minute frozen-UI issue.
+- **TikTok disconnect** — Settings > Connected accounts; revokes the grant via `/v2/oauth/revoke/` (best-effort) + deletes the connection (cascades to tiktok_videos/analysis_cache, no orphans). Chat history kept.
 - **TikTok OAuth audit passed end-to-end in sandbox.** Confirmed redirect_uri exactly matches portal: `https://client-iq-tawny.vercel.app/api/auth/tiktok/callback`.
 - **Minimal scopes confirmed:** `user.info.basic`, `user.info.profile`, `user.info.stats` (each maps to a visible field on the connected-account card; no unused scopes).
 - **Privacy/Terms links added IN-APP** (landing nav + footer, workspace sidebar) — was a review gap.
@@ -28,12 +39,14 @@
 ---
 
 ## Next Up (priority order)
-1. **Record + submit the TikTok demo video** (1–2 min, voice narration, sandbox account `jaketamyujune`, on the root domain). Flow: open root site → Connect TikTok → authorize → show connected card naming each scope (basic = avatar/name, profile = profile info, stats = follower/following/likes/video counts) → click Privacy/Terms links. Fill the app-review explanation box, then submit.
-2. **TikTok data layer + token-refresh + UI shell** — build DURING the ~2-week wait (schema is known) so it lights up the moment approval lands.
-3. **Stand up the build-in-public marketing channel** — warm the startup-circle + creator-friends cohort. Distribution is the hardest unsolved problem (faith audience deliberately not used).
-4. **Fresh YouTube pull** to verify the 3 open items (watch-time card, weekly growth, Winning Hooks).
+1. **Submit the `video.list` scope amendment** once the current TikTok review resolves (unlocks TikTok video data + Channel Analysis).
+2. **Verify the 3 YouTube items on next quota reset** (watch-time card, weekly growth, Winning Hooks) via a fresh pull.
+3. **UI/aesthetic polish pass** — before showing to the cohort.
+4. **Stand up the build-in-public marketing channel** — warm the startup-circle + creator-friends cohort. Distribution is the hardest unsolved problem (faith audience deliberately not used).
 5. Feedback loop Phase 2 (verdict re-grading) / Phase 3 (feed outcomes into Planning grounding) — **wait for real outcome data.**
-6. UI/aesthetic polish pass — before showing to the cohort.
+
+### Backlog (low priority)
+- **Account-merge gap:** a person who signs up TikTok-first AND YouTube-first creates two separate `users` rows (no identity linking across platforms yet). Fine for now; revisit if it bites.
 
 ---
 
@@ -46,7 +59,7 @@
 
 ## Blocked / Waiting on External
 - **Instagram** — blocked on Meta developer/SMS verification. Support ticket pending, **no timeline.** Check the ticket (email on the Meta dev account + App Dashboard → Support) every few days. Do NOT retry the same SMS troubleshooting loop. Never the launch gate.
-- **TikTok production access** — pending application (~2-week lag once submitted). Sandbox returns test accounts only (all zeros) until approved.
+- **TikTok production access** — **submitted, in review** (~2-week decision window). Sandbox returns test accounts only (all zeros) until approved. `video.list` scope amendment goes in once this resolves.
 
 ---
 
