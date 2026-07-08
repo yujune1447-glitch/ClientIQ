@@ -9,7 +9,7 @@ import {
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
 import { SavedIdeasBoard } from "@/app/components/SavedIdeasBoard";
-import { TikTokLiveStats } from "@/app/components/TikTokLiveStats";
+import { TikTokView } from "@/app/components/TikTokView";
 import { useChatStream, type ChatMsg } from "@/app/hooks/useChatStream";
 import type { ChannelSnapshot } from "@/types";
 
@@ -329,11 +329,9 @@ export default function WorkspaceShell({
   } else if (mainView === "instagram") {
     centerContent = <InstagramComingSoon />;
   } else {
-    centerContent = effectiveAnalysis ? (
-      <AnalysisContent analysis={effectiveAnalysis} snapshots={[]} platformFilter="tiktok" ttConn={ttConn} />
-    ) : (
-      <TikTokLiveStats
-        initial={
+    centerContent = (
+      <TikTokView
+        initialConn={
           ttConn
             ? {
                 displayName: ttConn.displayName,

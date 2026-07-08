@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   TrendingUp, TrendingDown, PlayCircle, Eye, ThumbsUp,
-  MessageSquare, Target, Bell, Camera, Heart, Music2, Share2,
+  MessageSquare, Target, Bell, Camera, Heart,
   Loader2, Send, BookmarkPlus, Sparkles, Clock, Type, Zap,
   User, ListOrdered, Calendar, Hash,
 } from "lucide-react";
@@ -306,21 +306,12 @@ export function AnalysisContent({
   analysis,
   snapshots,
   platformFilter,
-  ttConn,
 }: {
   analysis: AnalysisData;
   snapshots: ChannelSnapshot[];
-  platformFilter?: "youtube" | "instagram" | "tiktok";
-  ttConn?: {
-    displayName: string;
-    avatarUrl: string | null;
-    followerCount: number;
-    followingCount: number;
-    likesCount: number;
-    videoCount: number;
-  } | null;
+  platformFilter?: "youtube" | "instagram";
 }) {
-  const { summary, autopsy, igSummary, tikTokSummary, isUnread, isScheduled, id, createdAt } = analysis;
+  const { summary, autopsy, igSummary, isUnread, isScheduled, id, createdAt } = analysis;
   const { channel, averages, topPerformers, bottomPerformers } = summary;
 
   // ── Instagram view ──────────────────────────────────────────────────────────
@@ -385,110 +376,6 @@ export function AnalysisContent({
             <div>
               <p className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">Connect Instagram</p>
               <p className="text-xs text-zinc-700">Add cross-platform audience signals to your next brief</p>
-            </div>
-          </a>
-        )}
-        <div className="pb-4" />
-      </div>
-    );
-  }
-
-  // ── TikTok view ─────────────────────────────────────────────────────────────
-  if (platformFilter === "tiktok") {
-    return (
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-        <div>
-          <h1 className="text-xl font-bold">TikTok Analytics</h1>
-          {tikTokSummary && <p className="text-sm text-zinc-500 mt-0.5">{tikTokSummary.displayName}</p>}
-        </div>
-        {tikTokSummary ? (
-          <>
-            <div className="grid sm:grid-cols-4 gap-3">
-              {[
-                { label: "Followers", value: fmt(tikTokSummary.followerCount) },
-                { label: "Avg views", value: fmt(tikTokSummary.averages.views) },
-                { label: "Avg likes", value: fmt(tikTokSummary.averages.likes) },
-                { label: "Engagement rate", value: `${tikTokSummary.averages.engagementRate}%` },
-              ].map((s) => (
-                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
-                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
-                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-[#111113] border border-[#27272a] rounded-xl p-6">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-4">Top videos by views</p>
-              <div className="space-y-2">
-                {tikTokSummary.topVideos.slice(0, 10).map((video, i) => (
-                  <a
-                    key={video.id}
-                    href={video.share_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 hover:bg-[#1a1a1d] rounded-lg px-3 py-2.5 transition-colors group"
-                  >
-                    <span className="text-xs font-mono text-zinc-600 w-5 shrink-0">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-zinc-300 truncate group-hover:text-white transition-colors">
-                        {video.title || video.video_description.slice(0, 80) || "(untitled)"}
-                      </p>
-                      <p className="text-[11px] text-zinc-600">
-                        {video.duration}s · {new Date(video.create_time * 1000).toISOString().slice(0, 10)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-zinc-500 shrink-0">
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{fmt(video.view_count)}</span>
-                      <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{fmt(video.like_count)}</span>
-                      <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{fmt(video.share_count)}</span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </>
-        ) : ttConn ? (
-          <>
-            <div className="flex items-center gap-4">
-              {ttConn.avatarUrl ? (
-                <img src={ttConn.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
-                  <Music2 className="w-5 h-5 text-white" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{ttConn.displayName}</p>
-                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  TikTok connected
-                </span>
-              </div>
-            </div>
-            <div className="grid sm:grid-cols-4 gap-3">
-              {[
-                { label: "Followers", value: fmt(ttConn.followerCount) },
-                { label: "Following", value: fmt(ttConn.followingCount) },
-                { label: "Likes", value: fmt(ttConn.likesCount) },
-                { label: "Videos", value: fmt(ttConn.videoCount) },
-              ].map((s) => (
-                <div key={s.label} className="bg-[#111113] border border-[#27272a] rounded-xl p-4 text-center">
-                  <p className="text-xl font-bold tabular-nums">{s.value}</p>
-                  <p className="text-[11px] text-zinc-600 mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <a
-            href="/api/auth/tiktok"
-            className="flex items-center gap-4 bg-[#111113] border border-[#1f1f22] hover:border-[#27272a] rounded-xl p-5 transition-colors group"
-          >
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-[#EE1D52] flex items-center justify-center shrink-0">
-              <Music2 className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">Connect TikTok</p>
-              <p className="text-xs text-zinc-700">Add short-form video signals to your next brief</p>
             </div>
           </a>
         )}
@@ -1459,7 +1346,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   );
 }
 
-function Card({
+export function Card({
   title,
   subtitle,
   children,
@@ -1479,7 +1366,7 @@ function Card({
   );
 }
 
-function StatBlock({
+export function StatBlock({
   label,
   value,
   delta,
