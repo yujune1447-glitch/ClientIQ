@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { fetchTikTokUserInfo } from "@/lib/tiktok";
 
 const TIKTOK_API = "https://open.tiktokapis.com/v2";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
@@ -51,19 +52,9 @@ export async function GET(request: NextRequest) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=token_failed`));
   }
 
-  const { access_token, refresh_token, expires_in, refresh_expires_in, open_id } = tokenData;
+  const { access_token, refresh_token, expires_in, refresh_expires_in, open_id, scope } = tokenData;
 
-  const userRes = await fetch(
-    `${TIKTOK_API}/user/info/?fields=open_id,union_id,avatar_url,display_name,follower_count,following_count,likes_count,video_count`,
-    { headers: { Authorization: `Bearer ${access_token}` } }
-  );
-
-  if (!userRes.ok) {
-    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
-  }
-
-  const userData = await userRes.json();
-  const user = userData.data?.user;
+  const user = await fetchTikTokUserInfo(access_token);
 
   if (!user) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
@@ -92,6 +83,7 @@ export async function GET(request: NextRequest) {
       video_count: user.video_count ?? 0,
       access_token,
       refresh_token: refreshTokenToStore,
+      scope: scope ?? null,
       token_expires_at: new Date(Date.now() + (expires_in ?? 86400) * 1000).toISOString(),
       refresh_token_expires_at: refresh_expires_in
         ? new Date(Date.now() + refresh_expires_in * 1000).toISOString()

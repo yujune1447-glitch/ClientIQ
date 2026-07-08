@@ -1,9 +1,143 @@
 import type { TikTokVideo, TikTokSummary } from "@/types";
+import type { createAdminClient } from "@/lib/supabase-admin";
 
 const TIKTOK_API = "https://open.tiktokapis.com/v2";
 
+// Video-level endpoints (video.list / video.comment.list) require the `video.list`
+// scope, which is NOT in the approved set (user.info.basic/profile/stats). Keep all
+// video fetching behind this flag until production access grants that scope.
+export const TIKTOK_VIDEO_ENABLED = process.env.TIKTOK_VIDEO_ENABLED === "true";
+
 const VIDEO_FIELDS =
   "id,title,video_description,duration,cover_image_url,share_url,like_count,comment_count,share_count,view_count,create_time";
+
+const USER_INFO_FIELDS =
+  "open_id,union_id,avatar_url,display_name,bio_description,profile_deep_link,is_verified,follower_count,following_count,likes_count,video_count";
+
+export interface TikTokUserInfo {
+  open_id: string;
+  union_id: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio_description: string | null;
+  profile_deep_link: string | null;
+  is_verified: boolean;
+  follower_count: number;
+  following_count: number;
+  likes_count: number;
+  video_count: number;
+}
+
+// user.info.basic (avatar/display_name), user.info.profile (bio/profile link/verified),
+// user.info.stats (follower/following/likes/video counts) — one call, all approved scopes.
+export async function fetchTikTokUserInfo(accessToken: string): Promise<TikTokUserInfo | null> {
+  try {
+    const res = await fetch(`${TIKTOK_API}/user/info/?fields=${USER_INFO_FIELDS}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await res.json();
+    const user = data?.data?.user;
+    if (!res.ok || data.error?.code !== "ok" || !user) return null;
+    return {
+      open_id: user.open_id,
+      union_id: user.union_id ?? null,
+      display_name: user.display_name ?? null,
+      avatar_url: user.avatar_url ?? null,
+      bio_description: user.bio_description ?? null,
+      profile_deep_link: user.profile_deep_link ?? null,
+      is_verified: user.is_verified ?? false,
+      follower_count: user.follower_count ?? 0,
+      following_count: user.following_count ?? 0,
+      likes_count: user.likes_count ?? 0,
+      video_count: user.video_count ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+export type TikTokTokenResult =
+  | { status: "ok"; accessToken: string; connection: TikTokConnectionRow }
+  | { status: "needs_reconnect" }
+  | { status: "disconnected" };
+
+export interface TikTokConnectionRow {
+  id: string;
+  open_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  follower_count: number;
+  following_count: number;
+  likes_count: number;
+  video_count: number;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  refresh_token_expires_at: string | null;
+}
+
+const CONNECTION_COLUMNS =
+  "id, open_id, display_name, avatar_url, follower_count, following_count, likes_count, video_count, access_token, refresh_token, token_expires_at, refresh_token_expires_at";
+
+// Returns a valid access token, refreshing when within 1h of expiry. On refresh
+// failure the connection is cleared (no silent failure) so the UI prompts reconnect.
+export async function getValidTikTokAccessToken(
+  userId: string,
+  supabase: AdminClient
+): Promise<TikTokTokenResult> {
+  const { data: conn } = await supabase
+    .from("tiktok_connections")
+    .select(CONNECTION_COLUMNS)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!conn) return { status: "disconnected" };
+
+  const connection = conn as TikTokConnectionRow;
+  const expiresAt = connection.token_expires_at ? new Date(connection.token_expires_at).getTime() : 0;
+  const oneHourFromNow = Date.now() + 60 * 60 * 1000;
+
+  if (expiresAt > oneHourFromNow) {
+    return { status: "ok", accessToken: connection.access_token, connection };
+  }
+
+  if (!connection.refresh_token) {
+    await supabase.from("tiktok_connections").delete().eq("user_id", userId);
+    return { status: "needs_reconnect" };
+  }
+
+  const refreshed = await refreshTikTokToken(connection.refresh_token);
+  if (!refreshed) {
+    await supabase.from("tiktok_connections").delete().eq("user_id", userId);
+    return { status: "needs_reconnect" };
+  }
+
+  const { error: updateError } = await supabase
+    .from("tiktok_connections")
+    .update({
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token ?? connection.refresh_token,
+      token_expires_at: new Date(Date.now() + (refreshed.expires_in ?? 86400) * 1000).toISOString(),
+      refresh_token_expires_at: refreshed.refresh_expires_in
+        ? new Date(Date.now() + refreshed.refresh_expires_in * 1000).toISOString()
+        : connection.refresh_token_expires_at,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+
+  if (updateError) {
+    await supabase.from("tiktok_connections").delete().eq("user_id", userId);
+    return { status: "needs_reconnect" };
+  }
+
+  return {
+    status: "ok",
+    accessToken: refreshed.access_token,
+    connection: { ...connection, access_token: refreshed.access_token },
+  };
+}
 
 export async function refreshTikTokToken(refreshToken: string): Promise<{
   access_token: string;
@@ -83,6 +217,7 @@ async function fetchVideoPage(
 }
 
 async function fetchAllVideos(accessToken: string, maxVideos = 200): Promise<TikTokVideo[]> {
+  if (!TIKTOK_VIDEO_ENABLED) return [];
   const all: TikTokVideo[] = [];
   let cursor = 0;
   let hasMore = true;
