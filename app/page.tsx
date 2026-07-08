@@ -24,14 +24,14 @@ export default async function LandingPage() {
           <Link href="/terms" className="text-sm text-zinc-500 hover:text-white transition-colors hidden sm:inline">
             Terms
           </Link>
-          <a href="/api/auth/youtube" className="text-sm text-zinc-400 hover:text-white transition-colors">
+          <a href="/home" className="text-sm text-zinc-400 hover:text-white transition-colors">
             Sign in
           </a>
           <a
-            href="/api/auth/youtube"
+            href="/home"
             className="text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
           >
-            Get started
+            Get Started
           </a>
         </div>
       </nav>
@@ -40,7 +40,7 @@ export default async function LandingPage() {
       <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 max-w-4xl mx-auto w-full">
         <div className="inline-flex items-center gap-2 bg-[#1c1c1f] border border-[#27272a] rounded-full px-4 py-1.5 text-xs text-zinc-400 mb-8">
           <span className="w-1.5 h-1.5 rounded-full bg-[#ff3040] inline-block" />
-          AI-powered content intelligence for YouTube creators
+          AI-powered content intelligence for creators
         </div>
 
         <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
@@ -50,17 +50,17 @@ export default async function LandingPage() {
         </h1>
 
         <p className="text-lg text-zinc-400 max-w-xl mb-10 leading-relaxed">
-          CreatorIQ analyses your entire YouTube history, identifies what&apos;s resonating
-          with your audience, and generates your weekly content brief — powered by AI.
+          CreatorIQ analyses your full history across YouTube and TikTok, identifies what&apos;s
+          resonating with your audience, and generates your weekly content brief — powered by AI.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <a
-            href="/api/auth/youtube"
+            href="/home"
             className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
           >
             <PlayCircle className="w-4 h-4" />
-            Connect your YouTube channel
+            Get Started
             <ArrowRight className="w-4 h-4" />
           </a>
           <span className="text-xs text-zinc-600">Free to try · No credit card required</span>
@@ -77,14 +77,14 @@ export default async function LandingPage() {
             {[
               {
                 step: "01",
-                title: "Connect YouTube",
-                body: "Authorise read access to your channel. We pull your entire video history — every video, every stat.",
+                title: "Connect your platforms",
+                body: "Authorise read access to your YouTube and TikTok accounts. We pull your full history — every video, every stat.",
                 icon: <PlayCircle className="w-5 h-5" />,
               },
               {
                 step: "02",
                 title: "We analyse everything",
-                body: "Our engine calculates channel averages, ranks every video by performance score, and isolates your top and bottom performers.",
+                body: "Our engine calculates your averages, ranks every video by performance score, and isolates your top and bottom performers.",
                 icon: <BarChart3 className="w-5 h-5" />,
               },
               {
@@ -118,11 +118,11 @@ export default async function LandingPage() {
           </p>
           <div className="grid md:grid-cols-2 gap-4">
             {[
-              "Full channel history analysis — every video scored",
+              "Full history analysis across YouTube and TikTok — every video scored",
               "Top 10 and bottom 10 performer breakdown",
               "AI-generated weekly content brief with hook and titles",
               "Content autopsy: what's working and what isn't",
-              "Audience pattern recognition from your comment data",
+              "Audience pattern recognition from your comments across platforms",
               "Outlier detection — your biggest surprise hits and misses",
             ].map((feature) => (
               <div key={feature} className="flex items-start gap-3 py-3">
@@ -141,14 +141,14 @@ export default async function LandingPage() {
             Stop guessing. Start growing.
           </h2>
           <p className="text-zinc-500 text-sm mb-8">
-            Connect your channel in 30 seconds and get your first content brief today.
+            Connect your accounts in 30 seconds and get your first content brief today.
           </p>
           <a
-            href="/api/auth/youtube"
+            href="/home"
             className="inline-flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
           >
             <PlayCircle className="w-4 h-4" />
-            Connect YouTube — it&apos;s free
+            Get Started — it&apos;s free
           </a>
         </div>
       </section>
@@ -161,7 +161,7 @@ export default async function LandingPage() {
           <Link href="/terms" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
         </div>
         <p className="text-xs text-zinc-700">
-          © 2025 CreatorIQ. Built for creators who take their channel seriously.
+          © 2025 CreatorIQ. Built for creators who take their content seriously.
         </p>
       </footer>
     </div>

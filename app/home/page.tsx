@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PlayCircle, Music2, Camera, Zap, ArrowRight, LayoutDashboard, Settings } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase-admin";
@@ -10,23 +9,30 @@ const fmt = (n: number) =>
 export default async function HomePage() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
-  if (!userId) redirect("/");
 
-  const supabase = createAdminClient();
+  // Public connection hub: signed-out visitors land here from "Get Started" and
+  // pick a platform to connect. Cached data only — no platform API calls, no
+  // analysis pipeline triggered here.
+  let ytConn: { channel_title: string | null; channel_thumbnail: string | null; subscriber_count: number | null } | null = null;
+  let ttConn: { display_name: string | null; avatar_url: string | null; follower_count: number | null } | null = null;
 
-  // Cached data only — no platform API calls, no analysis pipeline triggered here.
-  const [{ data: ytConn }, { data: ttConn }] = await Promise.all([
-    supabase
-      .from("youtube_connections")
-      .select("channel_title, channel_thumbnail, subscriber_count")
-      .eq("user_id", userId)
-      .maybeSingle(),
-    supabase
-      .from("tiktok_connections")
-      .select("display_name, avatar_url, follower_count")
-      .eq("user_id", userId)
-      .maybeSingle(),
-  ]);
+  if (userId) {
+    const supabase = createAdminClient();
+    const [{ data: yt }, { data: tt }] = await Promise.all([
+      supabase
+        .from("youtube_connections")
+        .select("channel_title, channel_thumbnail, subscriber_count")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("tiktok_connections")
+        .select("display_name, avatar_url, follower_count")
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+    ytConn = yt;
+    ttConn = tt;
+  }
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col">
@@ -38,22 +44,24 @@ export default async function HomePage() {
           </div>
           <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
         </Link>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/settings"
-            className="text-zinc-500 hover:text-white transition-colors"
-            aria-label="Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/workspace"
-            className="flex items-center gap-2 text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            Open Dashboard
-          </Link>
-        </div>
+        {userId && (
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              className="text-zinc-500 hover:text-white transition-colors"
+              aria-label="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/workspace"
+              className="flex items-center gap-2 text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Open Dashboard
+            </Link>
+          </div>
+        )}
       </nav>
 
       {/* Hub */}
