@@ -164,6 +164,26 @@ export async function refreshTikTokToken(refreshToken: string): Promise<{
   }
 }
 
+// Revokes the grant on TikTok's side so CreatorIQ disappears from the user's
+// authorized-apps list. Best-effort: an empty 200 body means success; any error
+// is swallowed so a local disconnect still proceeds. Returns true on confirmed revoke.
+export async function revokeTikTokToken(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${TIKTOK_API}/oauth/revoke/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: process.env.TIKTOK_CLIENT_KEY!,
+        client_secret: process.env.TIKTOK_CLIENT_SECRET!,
+        token: accessToken,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchVideoPage(
   accessToken: string,
   cursor: number
