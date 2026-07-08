@@ -70,6 +70,18 @@ const LS_KEY = "creatoriq_conversations_v2";
 const INIT_PROMPT =
   "Please give me a concise performance rundown of my channel. Highlight the key changes since my last check-in — wins, concerns, any metric shifts — grounded in actual numbers from my data. Then end with exactly 2 follow-up questions tailored specifically to what you found.";
 
+// Proactive rundown prompt, scoped to the active account so the AI never opens
+// by discussing the wrong platform.
+function initPromptFor(platform: AccountType): string {
+  if (platform === "tiktok") {
+    return "Please give me a concise rundown of my TikTok account — followers, following, total likes, and video count — grounded only in my actual TikTok numbers. Then end with exactly 2 follow-up questions tailored to what you found. Do not reference YouTube, Instagram, or any other platform.";
+  }
+  if (platform === "instagram") {
+    return "Give me a short note about my Instagram account. Instagram isn't connected yet (pending platform access), so let me know what will be available once it is. Do not reference YouTube or TikTok data.";
+  }
+  return INIT_PROMPT;
+}
+
 function loadConversations(): StoredConversation[] {
   if (typeof window === "undefined") return [];
   try {
@@ -113,8 +125,16 @@ export default function WorkspaceShell({
   const effectiveAnalysis = selectedAnalysis ?? clientAnalysis;
   const effectiveAnalysisId = effectiveAnalysis?.id ?? selectedAnalysisId;
 
+  // The AI panel is scoped to the active conversation's account (or the current
+  // account view). This drives which platform's data grounds every chat call.
+  const activeConv = conversations.find((c) => c.id === activeConvId);
+  const activePlatform: AccountType =
+    activeConv?.accountType ??
+    (mainView === "youtube" || mainView === "instagram" || mainView === "tiktok" ? mainView : "youtube");
+
   const { messages, setMessages, loading: aiLoading, append, reset } = useChatStream(
-    effectiveAnalysisId ?? undefined
+    activePlatform,
+    activePlatform === "youtube" ? (effectiveAnalysisId ?? undefined) : undefined
   );
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -175,10 +195,14 @@ export default function WorkspaceShell({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const initConversation = async (convId: string) => {
+  const initConversation = async (convId: string, platform: AccountType) => {
     reset();
-    const hiddenInit: ChatMsg = { role: "user", content: INIT_PROMPT, hidden: true };
-    const replyText = await append([hiddenInit]);
+    const hiddenInit: ChatMsg = { role: "user", content: initPromptFor(platform), hidden: true };
+    const replyText = await append(
+      [hiddenInit],
+      platform,
+      platform === "youtube" ? (effectiveAnalysisId ?? undefined) : undefined
+    );
     const finalMessages: ChatMsg[] = [hiddenInit, { role: "assistant", content: replyText }];
     setMessages(finalMessages);
     setConversations((prev) => {
@@ -216,7 +240,7 @@ export default function WorkspaceShell({
           setMessages(existingToday.messages);
         } else {
           setMessages([]);
-          initConversation(existingToday.id);
+          initConversation(existingToday.id, accountType);
         }
         return;
       }
@@ -241,7 +265,7 @@ export default function WorkspaceShell({
     setActiveConvId(newConv.id);
     setMessages([]);
     setAiPanelOpen(true);
-    initConversation(newConv.id);
+    initConversation(newConv.id, accountType);
   };
 
   const openSavedConversation = (conv: StoredConversation) => {
@@ -260,7 +284,11 @@ export default function WorkspaceShell({
     const updatedMessages: ChatMsg[] = [...messages, userMsg];
     setMessages(updatedMessages);
 
-    const replyText = await append(updatedMessages);
+    const replyText = await append(
+      updatedMessages,
+      activePlatform,
+      activePlatform === "youtube" ? (effectiveAnalysisId ?? undefined) : undefined
+    );
     if (activeConvId) {
       const finalMessages: ChatMsg[] = [...updatedMessages, { role: "assistant", content: replyText }];
       setConversations((prev) => {
@@ -708,7 +736,13 @@ export default function WorkspaceShell({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask anything about your channel…"
+                  placeholder={
+                    activePlatform === "tiktok"
+                      ? "Ask about your TikTok account…"
+                      : activePlatform === "instagram"
+                      ? "Ask about Instagram…"
+                      : "Ask anything about your channel…"
+                  }
                   rows={1}
                   className="w-full bg-transparent text-[13px] text-white placeholder-zinc-600 focus:outline-none resize-none min-h-[20px] max-h-[120px]"
                   style={{ fieldSizing: "content" } as React.CSSProperties}

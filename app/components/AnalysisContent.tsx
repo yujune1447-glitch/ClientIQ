@@ -403,7 +403,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const [tab, setTab] = useState<YtTab>("live");
   const [period, setPeriod] = useState<Period>("monthly");
 
-  const { messages: planMsgs, setMessages: setPlanMsgs, loading: planLoading, append: planAppend } = useChatStream(id);
+  const { messages: planMsgs, setMessages: setPlanMsgs, loading: planLoading, append: planAppend } = useChatStream("youtube", id);
   const [planInput, setPlanInput] = useState("");
   const [planSaveStatus, setPlanSaveStatus] = useState<Map<number, "saving" | "saved" | "error">>(new Map());
   const planChatId = useRef(crypto.randomUUID());

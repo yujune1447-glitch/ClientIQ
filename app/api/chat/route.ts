@@ -68,11 +68,37 @@ function buildContext(
   return lines.join("\n");
 }
 
+type Platform = "youtube" | "tiktok" | "instagram";
+
+function buildTikTokContext(conn: {
+  display_name: string | null;
+  follower_count: number | null;
+  following_count: number | null;
+  likes_count: number | null;
+  video_count: number | null;
+}): string {
+  return [
+    `TIKTOK ACCOUNT: ${conn.display_name ?? "TikTok"}`,
+    `Followers: ${fmt(conn.follower_count ?? 0)} | Following: ${fmt(conn.following_count ?? 0)} | Total likes: ${fmt(conn.likes_count ?? 0)} | Videos: ${conn.video_count ?? 0}`,
+  ].join("\n");
+}
+
+// Each platform gets its own isolated system prompt. The scoping instruction is
+// explicit so the model never volunteers cross-platform context.
+const SYSTEM_PROMPTS: Record<Platform, string> = {
+  youtube:
+    "You are an AI assistant built into CreatorIQ, a cross-platform content intelligence platform. You are currently scoped to the creator's YOUTUBE channel. Only discuss their YouTube data — never reference TikTok, Instagram, or any other platform. Be concise, specific, and data-driven. When answering, reference specific numbers and patterns from the creator's YouTube data.",
+  tiktok:
+    "You are an AI assistant built into CreatorIQ, a cross-platform content intelligence platform. You are currently scoped to the creator's TIKTOK account. Only discuss their TikTok data — never reference YouTube, Instagram, or any other platform, and never mention YouTube channel stats, video titles, or comment analysis. Be concise, specific, and data-driven. You currently have account-level stats only; deeper per-video analytics unlock once TikTok grants video-level API access — say so if asked for data you don't have.",
+  instagram:
+    "You are an AI assistant built into CreatorIQ, a cross-platform content intelligence platform. You are currently scoped to the creator's INSTAGRAM account, which is not yet connected (pending platform access). Only discuss Instagram in general terms — never reference YouTube, TikTok, or any other platform's data. Be concise and let the creator know Instagram data will be available once access is approved.",
+};
+
 export async function POST(request: NextRequest) {
   const userId = request.cookies.get("user_id")?.value;
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
-  let body: { messages: { role: string; content: string }[]; analysisId?: string };
+  let body: { messages: { role: string; content: string }[]; analysisId?: string; platform?: Platform };
   try {
     body = await request.json();
   } catch {
@@ -80,37 +106,54 @@ export async function POST(request: NextRequest) {
   }
 
   const { messages, analysisId } = body;
+  const platform: Platform = body.platform ?? "youtube";
   if (!messages?.length) return new Response("Bad request", { status: 400 });
 
   const supabase = createAdminClient();
-  const query = analysisId
-    ? supabase
-        .from("analyses")
-        .select("summary,brief,autopsy,comment_intelligence")
-        .eq("id", analysisId)
-        .eq("user_id", userId)
-        .single()
-    : supabase
-        .from("analyses")
-        .select("summary,brief,autopsy,comment_intelligence")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
 
-  const { data: analysis } = await query;
+  let systemPrompt = SYSTEM_PROMPTS[platform];
 
-  let systemPrompt = `You are an AI assistant built into CreatorIQ, a content intelligence platform for YouTube creators. You help creators understand their channel data, plan content, and grow their audience. Be concise, specific, and data-driven. When answering, reference specific numbers and patterns from the creator's data.`;
+  // Context injection is strictly per-platform: the TikTok thread never touches
+  // the YouTube analyses table, and vice versa.
+  if (platform === "youtube") {
+    const query = analysisId
+      ? supabase
+          .from("analyses")
+          .select("summary,brief,autopsy,comment_intelligence")
+          .eq("id", analysisId)
+          .eq("user_id", userId)
+          .single()
+      : supabase
+          .from("analyses")
+          .select("summary,brief,autopsy,comment_intelligence")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
 
-  if (analysis?.summary) {
-    const context = buildContext(
-      analysis.summary as ChannelSummary,
-      analysis.brief as ContentBrief | null,
-      analysis.autopsy as ContentAutopsy | null,
-      analysis.comment_intelligence as CommentIntelligence | null
-    );
-    systemPrompt += `\n\nHere is the creator's latest channel intelligence:\n\n${context}`;
+    const { data: analysis } = await query;
+    if (analysis?.summary) {
+      const context = buildContext(
+        analysis.summary as ChannelSummary,
+        analysis.brief as ContentBrief | null,
+        analysis.autopsy as ContentAutopsy | null,
+        analysis.comment_intelligence as CommentIntelligence | null
+      );
+      systemPrompt += `\n\nHere is the creator's latest YouTube channel intelligence:\n\n${context}`;
+    }
+  } else if (platform === "tiktok") {
+    const { data: conn } = await supabase
+      .from("tiktok_connections")
+      .select("display_name, follower_count, following_count, likes_count, video_count")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (conn) {
+      systemPrompt += `\n\nHere is the creator's TikTok account data:\n\n${buildTikTokContext(conn)}`;
+    }
+    // INTEGRATION POINT: when TIKTOK_VIDEO_ENABLED grants video.list scope, add
+    // per-video TikTok analysis here (still TikTok-only — never the analyses table).
   }
+  // instagram: no data source yet — system prompt alone.
 
   const stream = await client.messages.create({
     model: "claude-sonnet-4-6",

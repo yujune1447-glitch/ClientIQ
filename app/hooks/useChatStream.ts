@@ -8,14 +8,24 @@ export type ChatMsg = {
   hidden?: boolean;
 };
 
-export function useChatStream(analysisId?: string) {
+export type ChatPlatform = "youtube" | "tiktok" | "instagram";
+
+export function useChatStream(platform: ChatPlatform = "youtube", analysisId?: string) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [loading, setLoading] = useState(false);
 
   // append: sends toSend[] to /api/chat, streams reply into messages, returns final text.
   // hidden flag on messages is UI-only — all messages reach Claude for context.
+  // Callers may pass an explicit platform/analysisId override — used when switching
+  // accounts, so an init call can't send stale context from the previous render.
   const append = useCallback(
-    async (toSend: ChatMsg[]): Promise<string> => {
+    async (
+      toSend: ChatMsg[],
+      overridePlatform?: ChatPlatform,
+      overrideAnalysisId?: string
+    ): Promise<string> => {
+      const p = overridePlatform ?? platform;
+      const aId = overridePlatform ? overrideAnalysisId : analysisId;
       setLoading(true);
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
       try {
@@ -24,7 +34,8 @@ export function useChatStream(analysisId?: string) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: toSend.map((m) => ({ role: m.role, content: m.content })),
-            analysisId,
+            platform: p,
+            analysisId: p === "youtube" ? aId : undefined,
           }),
         });
         if (!res.ok || !res.body) throw new Error();
@@ -51,7 +62,7 @@ export function useChatStream(analysisId?: string) {
         setLoading(false);
       }
     },
-    [analysisId]
+    [platform, analysisId]
   );
 
   const reset = useCallback(() => setMessages([]), []);
