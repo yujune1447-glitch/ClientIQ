@@ -133,9 +133,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${APP_URL}/?error=db_error`);
   }
 
-  console.log("[yt-callback] youtube_connections upserted OK. Redirecting to /analyzing. user_id=%s", user.id);
+  console.log("[yt-callback] youtube_connections upserted OK. Redirecting to /home. user_id=%s", user.id);
 
-  const response = NextResponse.redirect(`${APP_URL}/analyzing`);
+  const response = NextResponse.redirect(`${APP_URL}/home`);
   response.cookies.set("user_id", user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -6,7 +6,7 @@ import { PlayCircle, BarChart3, Zap, ArrowRight, CheckCircle } from "lucide-reac
 export default async function LandingPage() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
-  if (userId) redirect("/workspace");
+  if (userId) redirect("/home");
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col">
       {/* Nav */}
@@ -27,12 +27,12 @@ export default async function LandingPage() {
           <a href="/api/auth/youtube" className="text-sm text-zinc-400 hover:text-white transition-colors">
             Sign in
           </a>
-          <Link
-            href="/analyzing"
+          <a
+            href="/api/auth/youtube"
             className="text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
           >
             Get started
-          </Link>
+          </a>
         </div>
       </nav>
 
