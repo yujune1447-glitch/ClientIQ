@@ -261,6 +261,7 @@ export function scoreVideos(
       ctr: a?.ctr ?? 0,
       averageViewDuration: a?.averageViewDuration ?? 0,
       averageViewPercentage: a?.averageViewPercentage ?? 0,
+      estimatedMinutesWatched: a?.estimatedMinutesWatched ?? 0,
       impressions: a?.impressions ?? 0,
       performanceScore: 0,
       viewsVsAverage: 0,

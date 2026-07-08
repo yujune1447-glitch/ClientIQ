@@ -468,13 +468,12 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const sortedByViews = [...periodVideos].sort((a, b) => b.viewCount - a.viewCount);
 
   const totalPeriodViews = periodVideos.reduce((s, v) => s + v.viewCount, 0);
-  const totalWatchHours = periodVideos.reduce((s, v) => {
-    return s + ((v.averageViewDuration ?? 0) * v.viewCount) / 3600;
-  }, 0);
-  // Watch-time (averageViewDuration) comes from the Analytics API. Analyses cached
-  // before that integration have it on no video — distinguish "predates metric"
-  // (show a hint) from "genuinely zero this period" (show "—").
-  const hasWatchTimeData = recentPool.some((v) => (v.averageViewDuration ?? 0) > 0);
+  // estimatedMinutesWatched is the authoritative watch-time metric from the
+  // Analytics API (exact total minutes watched per video). Convert to hours.
+  const totalWatchHours = periodVideos.reduce((s, v) => s + (v.estimatedMinutesWatched ?? 0) / 60, 0);
+  // Analyses cached before this metric was fetched have it on no video —
+  // distinguish "predates metric" (show a hint) from "genuinely zero" (show "—").
+  const hasWatchTimeData = recentPool.some((v) => (v.estimatedMinutesWatched ?? 0) > 0);
   const subDelta = computeSubDelta(snapshots, period, createdAt);
 
   // Recent comments from most recently published videos

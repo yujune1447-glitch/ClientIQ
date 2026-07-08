@@ -20,6 +20,7 @@ export interface YouTubeVideo {
   ctr?: number;
   averageViewDuration?: number;
   averageViewPercentage?: number;
+  estimatedMinutesWatched?: number;
   impressions?: number;
 }
 
@@ -297,6 +298,7 @@ export interface RawVideo {
 export interface VideoAnalytics {
   averageViewDuration: number;
   averageViewPercentage: number;
+  estimatedMinutesWatched: number;
   impressions: number;
   ctr: number;
 }

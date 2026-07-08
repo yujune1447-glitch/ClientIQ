@@ -106,14 +106,17 @@ export async function getChannelAnalytics(
   let page = 0;
 
   while (true) {
+    // The YouTube Analytics "top videos" report (dimensions=video) caps maxResults
+    // at 200 — requesting more returns HTTP 400 "query is not supported", which
+    // would silently zero out ALL per-video analytics (watch time + retention).
     const params = new URLSearchParams({
       ids: "channel==mine",
       startDate: "2005-01-01",
       endDate: new Date().toISOString().slice(0, 10),
-      metrics: "views,averageViewDuration,averageViewPercentage",
+      metrics: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage",
       dimensions: "video",
       sort: "-views",
-      maxResults: "500",
+      maxResults: "200",
       startIndex: String(startIndex),
     });
 
@@ -125,14 +128,20 @@ export async function getChannelAnalytics(
     if (!res.ok || !data.rows?.length) break;
 
     page++;
-    for (const [videoId, , avgDuration, avgPct] of data.rows) {
-      map.set(videoId, { averageViewDuration: avgDuration, averageViewPercentage: avgPct, impressions: 0, ctr: 0 });
+    for (const [videoId, , estMinutes, avgDuration, avgPct] of data.rows) {
+      map.set(videoId, {
+        averageViewDuration: avgDuration,
+        averageViewPercentage: avgPct,
+        estimatedMinutesWatched: estMinutes,
+        impressions: 0,
+        ctr: 0,
+      });
     }
 
     onProgress?.(page, map.size);
 
-    if (data.rows.length < 500) break;
-    startIndex += 500;
+    if (data.rows.length < 200) break;
+    startIndex += 200;
   }
 
   return map;

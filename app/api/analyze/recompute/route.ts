@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
     allScored.map((v) => [v.id, {
       averageViewDuration: v.averageViewDuration ?? 0,
       averageViewPercentage: v.averageViewPercentage ?? 0,
+      estimatedMinutesWatched: v.estimatedMinutesWatched ?? 0,
       impressions: v.impressions ?? 0,
       ctr: v.ctr ?? 0,
     }])
