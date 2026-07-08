@@ -26,10 +26,8 @@ export async function GET(request: NextRequest) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=oauth_denied`));
   }
 
-  const userId = request.cookies.get("user_id")?.value;
-  if (!userId) {
-    return clearState(NextResponse.redirect(`${APP_URL}/?error=not_authenticated`));
-  }
+  // No session is fine — a TikTok-first signup bootstraps a new user below.
+  const sessionUserId = request.cookies.get("user_id")?.value;
 
   const tokenRes = await fetch(`${TIKTOK_API}/oauth/token/`, {
     method: "POST",
@@ -60,7 +58,31 @@ export async function GET(request: NextRequest) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
   }
 
+  const ttOpenId = open_id ?? user.open_id;
+  if (!ttOpenId) {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=user_info_failed`));
+  }
+
   const supabase = createAdminClient();
+
+  // Resolve the account. Existing session → attach to that user (unchanged).
+  // No session → bootstrap a new user keyed by TikTok open_id (TikTok scopes
+  // give no email/google_id), mirroring how YouTube's callback upserts on google_id.
+  const bootstrapped = !sessionUserId;
+  let userId: string;
+  if (sessionUserId) {
+    userId = sessionUserId;
+  } else {
+    const { data: newUser, error: userError } = await supabase
+      .from("users")
+      .upsert({ tiktok_open_id: ttOpenId }, { onConflict: "tiktok_open_id" })
+      .select("id")
+      .single();
+    if (userError || !newUser) {
+      return clearState(NextResponse.redirect(`${APP_URL}/?error=signup_failed`));
+    }
+    userId = newUser.id as string;
+  }
 
   const { data: existing } = await supabase
     .from("tiktok_connections")
@@ -73,7 +95,7 @@ export async function GET(request: NextRequest) {
   const { error: connError } = await supabase.from("tiktok_connections").upsert(
     {
       user_id: userId,
-      open_id: open_id ?? user.open_id,
+      open_id: ttOpenId,
       union_id: user.union_id ?? null,
       display_name: user.display_name ?? null,
       avatar_url: user.avatar_url ?? null,
@@ -97,7 +119,19 @@ export async function GET(request: NextRequest) {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=db_error`));
   }
 
-  return clearState(NextResponse.redirect(`${APP_URL}/workspace`));
+  // Bootstrapped signups land on the hub; existing sessions keep their prior
+  // destination (/workspace). Re-set the session cookie either way — it's the
+  // new user's session on bootstrap, and a harmless no-op for existing sessions.
+  const dest = bootstrapped ? "/home" : "/workspace";
+  const response = NextResponse.redirect(`${APP_URL}${dest}`);
+  response.cookies.set("user_id", userId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 30,
+    path: "/",
+  });
+  return clearState(response);
   } catch {
     return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=unexpected`));
   }
