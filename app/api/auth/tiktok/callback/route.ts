@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
 
   const clearState = (res: NextResponse) => {
     res.cookies.set("tt_oauth_state", "", { maxAge: 0, path: "/" });
+    res.cookies.set("tt_code_verifier", "", { maxAge: 0, path: "/" });
     return res;
   };
 
@@ -29,6 +30,12 @@ export async function GET(request: NextRequest) {
   // No session is fine — a TikTok-first signup bootstraps a new user below.
   const sessionUserId = request.cookies.get("user_id")?.value;
 
+  // PKCE verifier set by the authorize route; TikTok requires it at token exchange.
+  const codeVerifier = request.cookies.get("tt_code_verifier")?.value;
+  if (!codeVerifier) {
+    return clearState(NextResponse.redirect(`${APP_URL}/workspace?tiktok_error=state_mismatch`));
+  }
+
   const tokenRes = await fetch(`${TIKTOK_API}/oauth/token/`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -38,6 +45,7 @@ export async function GET(request: NextRequest) {
       code,
       grant_type: "authorization_code",
       redirect_uri: process.env.TIKTOK_REDIRECT_URI!,
+      code_verifier: codeVerifier,
     }),
   });
 
