@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { logUsage } from "@/lib/usage";
 import type { ChannelSummary, ContentBrief, ContentAutopsy, CommentIntelligence } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const CHAT_MODEL = "claude-sonnet-4-6";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -156,9 +158,13 @@ export async function POST(request: NextRequest) {
   // instagram: no data source yet — system prompt alone.
 
   const stream = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: CHAT_MODEL,
     max_tokens: 1024,
-    system: systemPrompt,
+    // The system prompt carries the platform grounding data, reused unchanged on
+    // every turn of a conversation. cache_control makes those repeated tokens bill
+    // at the cache-read rate. (Below the ~1024-token cache minimum — e.g. a bare
+    // TikTok prompt — this is simply a no-op, never an error.)
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     messages: messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     stream: true,
   });
@@ -166,9 +172,18 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
+      // Accumulate token usage across streaming events for cost logging.
+      const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
       try {
         for await (const event of stream) {
-          if (
+          if (event.type === "message_start") {
+            const u = event.message.usage;
+            usage.input_tokens = u.input_tokens ?? 0;
+            usage.cache_read_input_tokens = u.cache_read_input_tokens ?? 0;
+            usage.cache_creation_input_tokens = u.cache_creation_input_tokens ?? 0;
+          } else if (event.type === "message_delta") {
+            usage.output_tokens = event.usage.output_tokens ?? 0;
+          } else if (
             event.type === "content_block_delta" &&
             event.delta.type === "text_delta"
           ) {
@@ -176,6 +191,7 @@ export async function POST(request: NextRequest) {
           }
         }
       } finally {
+        logUsage(`chat:${platform}`, CHAT_MODEL, usage, userId);
         controller.close();
       }
     },

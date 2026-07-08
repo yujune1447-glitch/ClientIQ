@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logUsage } from "@/lib/usage";
 import type { ChannelSummary, TikTokSummary, InstagramSummary, CommentIntelligence } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MODEL = "claude-sonnet-4-6";
 
 interface FlatComment {
   platform: "youtube" | "tiktok" | "instagram";
@@ -164,14 +166,19 @@ export async function analyzeComments(
   let message: Awaited<ReturnType<typeof client.messages.create>>;
   try {
     console.log("[comment-intel] Calling Anthropic API...");
+    // No cache_control here: the system prompt is a single short line and the
+    // per-analysis comment payload is unique each run, so there is no repeated
+    // large prefix to cache. Kept on Sonnet — this produces user-facing audience
+    // personas / key insight that also ground briefs, so not a Haiku candidate.
     message = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: MODEL,
       max_tokens: 4096,
       system: "You are an expert audience intelligence analyst. Return only valid JSON.",
       messages: [{ role: "user", content: prompt }],
     });
     console.log("[comment-intel] API response received in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
       Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
+    logUsage("comment-intel", MODEL, message.usage);
   } catch (err) {
     console.error("[comment-intel] Anthropic API call FAILED after %dms: %s",
       Date.now() - t0, err instanceof Error ? err.message : String(err));

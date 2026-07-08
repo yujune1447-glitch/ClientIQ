@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logUsage } from "@/lib/usage";
 import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence, SuccessPatterns, ChannelSynthesis } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MODEL = "claude-sonnet-4-6";
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -325,13 +327,16 @@ export async function computeChannelSynthesis(
   console.log("[synthesis] Calling Claude. prompt=%d chars", prompt.length);
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: MODEL,
     max_tokens: 1500,
-    system: SYNTHESIS_SYSTEM,
+    // Static system prompt (identical across every channel's synthesis) — cache it
+    // so repeated runs within the cache window bill the system block at cache-read rate.
+    system: [{ type: "text", text: SYNTHESIS_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: prompt }],
   });
 
   console.log("[synthesis] Done in %dms. input=%d output=%d", Date.now() - t0, message.usage.input_tokens, message.usage.output_tokens);
+  logUsage("synthesis", MODEL, message.usage);
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
@@ -376,13 +381,16 @@ export async function generateContentBrief(
   try {
     console.log("[claude] Calling Anthropic API (max_tokens=8000)...");
     message = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: MODEL,
       max_tokens: 8000,
-      system: SYSTEM,
+      // Large static strategist system prompt, identical for every brief — cache it
+      // so concurrent/repeat brief generations within the window read it cheaply.
+      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: prompt }],
     });
     console.log("[claude] API response in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
       Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
+    logUsage("brief", MODEL, message.usage);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[claude] Anthropic API call FAILED after %dms: %s", Date.now() - t0, msg);
