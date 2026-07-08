@@ -15,8 +15,11 @@ const STEPS = [
   { id: "process", label: "Processing performance data", sublabel: "Calculating channel averages and scores" },
   { id: "rank", label: "Analysing top & bottom performers", sublabel: "Fetching comments from key videos" },
   { id: "comments_intel", label: "Analysing audience comments", sublabel: "Clustering themes, surfacing ideas, mapping emotional signals" },
+  { id: "synthesis", label: "Synthesising channel intelligence", sublabel: "Connecting patterns across all six analysis layers" },
   { id: "save", label: "Generating your brief", sublabel: "Claude is combining all intelligence" },
 ];
+
+const STREAMING_STEPS = new Set(["comments_intel", "synthesis", "save"]);
 
 function isQuotaError(msg: string): boolean {
   const lower = msg.toLowerCase();
@@ -29,6 +32,8 @@ function AnalyzingContent() {
   const reanalyze = searchParams.get("reanalyze") === "1";
 
   const [statuses, setStatuses] = useState<Record<string, StepStatus>>({ connect: "active" });
+  const [streamChars, setStreamChars] = useState<Record<string, number>>({});
+  const [stepMs, setStepMs] = useState<Record<string, number>>({});
   const [videoCount, setVideoCount] = useState(0);
   const [detailsProgress, setDetailsProgress] = useState({ current: 0, total: 0 });
   const [done, setDone] = useState(false);
@@ -75,6 +80,12 @@ function AnalyzingContent() {
             break;
           case "step_done":
             setStatuses((prev) => ({ ...prev, [msg.step as string]: "complete" }));
+            if (typeof msg.ms === "number") {
+              setStepMs((prev) => ({ ...prev, [msg.step as string]: msg.ms as number }));
+            }
+            break;
+          case "stream_progress":
+            setStreamChars((prev) => ({ ...prev, [msg.step as string]: msg.chars as number }));
             break;
           case "step_skip":
             setStatuses((prev) => ({ ...prev, [msg.step as string]: "skipped" }));
@@ -280,6 +291,18 @@ function AnalyzingContent() {
                     )}
                     {status !== "pending" && status !== "skipped" && (
                       <p className="text-xs text-zinc-500 mt-0.5">{step.sublabel}</p>
+                    )}
+                    {status === "active" && STREAMING_STEPS.has(step.id) && (
+                      <p className="text-xs text-[#ff3040] mt-1 tabular-nums">
+                        {streamChars[step.id]
+                          ? `Claude is writing… ${streamChars[step.id].toLocaleString()} characters`
+                          : "Claude is thinking…"}
+                      </p>
+                    )}
+                    {status === "complete" && stepMs[step.id] != null && (
+                      <p className="text-[11px] text-zinc-600 mt-0.5 tabular-nums">
+                        Done in {(stepMs[step.id] / 1000).toFixed(1)}s
+                      </p>
                     )}
                   </div>
                 </div>

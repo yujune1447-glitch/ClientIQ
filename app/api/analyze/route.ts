@@ -45,6 +45,19 @@ export async function GET(request: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 
+      // Throttled per-stage progress for long streaming Claude calls, so the active
+      // step shows live movement (chars generated) instead of a static spinner.
+      const makeProgress = (step: string) => {
+        let last = 0;
+        return (chars: number) => {
+          const now = Date.now();
+          if (now - last >= 400) {
+            last = now;
+            emit({ event: "stream_progress", step, chars });
+          }
+        };
+      };
+
       try {
         // ── Auth + connections ─────────────────────────────────────────────
         const userId = request.cookies.get("user_id")?.value;
@@ -550,9 +563,10 @@ export async function GET(request: NextRequest) {
         console.log("[analyze] Analysis INSERT OK. analysis_id=%s user_id=%s", analysis.id, userId);
 
         emit({ event: "step_start", step: "comments_intel" });
+        const commentsIntelT0 = Date.now();
         let commentIntelligence;
         try {
-          commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary);
+          commentIntelligence = await analyzeComments(summary, tikTokSummary, igSummary, makeProgress("comments_intel"));
           console.log("[analyze] Comment intelligence OK: themes=%d videoIdeas=%d personas=%d topCommenters=%d",
             commentIntelligence.themes.length, commentIntelligence.videoIdeas.length,
             commentIntelligence.audiencePersonas.length, commentIntelligence.topCommenters.length);
@@ -570,27 +584,36 @@ export async function GET(request: NextRequest) {
         if (summary.successPatterns) {
           summary.successPatterns.audienceAnalysis = computeAudienceAnalysis(demographics ?? null, commentIntelligence);
         }
-        emit({ event: "step_done", step: "comments_intel" });
+        console.log("[analyze] comments_intel stage took %dms", Date.now() - commentsIntelT0);
+        emit({ event: "step_done", step: "comments_intel", ms: Date.now() - commentsIntelT0 });
 
         // ── Channel synthesis (Claude API — cross-layer, zero googleapis calls) ──
+        // Its own visible step: previously this ran between comments_intel and save with
+        // no step event, so the UI showed nothing active for the whole multi-second call.
+        emit({ event: "step_start", step: "synthesis" });
+        const synthesisT0 = Date.now();
         if (summary.successPatterns) {
           try {
             summary.successPatterns.synthesis = await computeChannelSynthesis(
               summary.successPatterns,
               commentIntelligence,
               channelInfo.title,
+              makeProgress("synthesis"),
             );
             console.log("[analyze] Synthesis OK: takeaways=%d", summary.successPatterns.synthesis.takeaways.length);
           } catch (err) {
             console.error("[analyze] Synthesis failed (non-fatal):", err instanceof Error ? err.message : err);
           }
         }
+        console.log("[analyze] synthesis stage took %dms", Date.now() - synthesisT0);
+        emit({ event: "step_done", step: "synthesis", ms: Date.now() - synthesisT0 });
 
         emit({ event: "step_start", step: "save" });
+        const saveT0 = Date.now();
         console.log("[analyze] Starting brief generation...");
         let brief, autopsy;
         try {
-          ({ brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence));
+          ({ brief, autopsy } = await generateContentBrief(summary, nicheSummary, igSummary, tikTokSummary, commentIntelligence, makeProgress("save")));
           console.log("[analyze] Brief generated. weeklyIdea='%s...' titleOptions=%d dataEvidence=%d",
             brief.weeklyIdea.slice(0, 60), brief.titleOptions.length, brief.dataEvidence.length);
         } catch (err) {
@@ -616,7 +639,8 @@ export async function GET(request: NextRequest) {
           console.log("[analyze] Analysis updated successfully.");
         }
 
-        emit({ event: "step_done", step: "save" });
+        console.log("[analyze] save (brief) stage took %dms", Date.now() - saveT0);
+        emit({ event: "step_done", step: "save", ms: Date.now() - saveT0 });
         emit({ event: "complete", analysisId: analysis.id, quotaSummary: quota.toJSON() });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Analysis failed";

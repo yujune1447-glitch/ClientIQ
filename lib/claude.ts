@@ -321,12 +321,15 @@ export async function computeChannelSynthesis(
   sp: SuccessPatterns,
   commentIntel: CommentIntelligence | null,
   channelTitle: string,
+  onProgress?: (chars: number) => void,
 ): Promise<ChannelSynthesis> {
   const t0 = Date.now();
   const prompt = buildSynthesisInput(sp, commentIntel, channelTitle);
-  console.log("[synthesis] Calling Claude. prompt=%d chars", prompt.length);
+  console.log("[synthesis] Calling Claude (streaming). prompt=%d chars", prompt.length);
 
-  const message = await client.messages.create({
+  // Streamed so the UI gets live progress instead of a static spinner during the call.
+  let acc = 0;
+  const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 1500,
     // Static system prompt (identical across every channel's synthesis) — cache it
@@ -334,6 +337,8 @@ export async function computeChannelSynthesis(
     system: [{ type: "text", text: SYNTHESIS_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: prompt }],
   });
+  stream.on("text", (delta: string) => { acc += delta.length; onProgress?.(acc); });
+  const message = await stream.finalMessage();
 
   console.log("[synthesis] Done in %dms. input=%d output=%d", Date.now() - t0, message.usage.input_tokens, message.usage.output_tokens);
   logUsage("synthesis", MODEL, message.usage);
@@ -354,7 +359,8 @@ export async function generateContentBrief(
   nicheSummary: NicheSummary | null,
   igSummary: InstagramSummary | null = null,
   tikTokSummary: TikTokSummary | null = null,
-  commentIntel: CommentIntelligence | null = null
+  commentIntel: CommentIntelligence | null = null,
+  onProgress?: (chars: number) => void
 ): Promise<{ brief: ContentBrief; autopsy: ContentAutopsy }> {
   const t0 = Date.now();
   const channelSection = buildChannelSection(summary);
@@ -377,10 +383,13 @@ export async function generateContentBrief(
     commentIntel?.themes.length ?? 0,
     commentIntel?.videoIdeas.length ?? 0);
 
-  let message: Awaited<ReturnType<typeof client.messages.create>>;
+  let message: Anthropic.Message;
   try {
-    console.log("[claude] Calling Anthropic API (max_tokens=8000)...");
-    message = await client.messages.create({
+    console.log("[claude] Calling Anthropic API (streaming, max_tokens=8000)...");
+    // Streamed: the brief is the largest output (~8k tokens) and the longest stage —
+    // streaming feeds live progress to the UI and avoids SDK HTTP timeouts on long generations.
+    let acc = 0;
+    const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 8000,
       // Large static strategist system prompt, identical for every brief — cache it
@@ -388,6 +397,8 @@ export async function generateContentBrief(
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: prompt }],
     });
+    stream.on("text", (delta: string) => { acc += delta.length; onProgress?.(acc); });
+    message = await stream.finalMessage();
     console.log("[claude] API response in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
       Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
     logUsage("brief", MODEL, message.usage);

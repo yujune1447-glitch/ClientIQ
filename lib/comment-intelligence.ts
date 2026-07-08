@@ -134,7 +134,8 @@ function emptyIntelligence(count: number): CommentIntelligence {
 export async function analyzeComments(
   summary: ChannelSummary,
   tikTokSummary: TikTokSummary | null,
-  igSummary: InstagramSummary | null
+  igSummary: InstagramSummary | null,
+  onProgress?: (chars: number) => void
 ): Promise<CommentIntelligence> {
   const t0 = Date.now();
   console.log("[comment-intel] Starting comment collection");
@@ -163,19 +164,23 @@ export async function analyzeComments(
   const prompt = buildPrompt(comments);
   console.log("[comment-intel] Prompt built: %d chars, %d comment groups", prompt.length, comments.length);
 
-  let message: Awaited<ReturnType<typeof client.messages.create>>;
+  let message: Anthropic.Message;
   try {
-    console.log("[comment-intel] Calling Anthropic API...");
+    console.log("[comment-intel] Calling Anthropic API (streaming)...");
     // No cache_control here: the system prompt is a single short line and the
     // per-analysis comment payload is unique each run, so there is no repeated
     // large prefix to cache. Kept on Sonnet — this produces user-facing audience
     // personas / key insight that also ground briefs, so not a Haiku candidate.
-    message = await client.messages.create({
+    // Streamed so the UI gets live progress and long outputs don't hit HTTP timeouts.
+    let acc = 0;
+    const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 4096,
       system: "You are an expert audience intelligence analyst. Return only valid JSON.",
       messages: [{ role: "user", content: prompt }],
     });
+    stream.on("text", (delta: string) => { acc += delta.length; onProgress?.(acc); });
+    message = await stream.finalMessage();
     console.log("[comment-intel] API response received in %dms | stop_reason=%s | input_tokens=%d output_tokens=%d",
       Date.now() - t0, message.stop_reason, message.usage.input_tokens, message.usage.output_tokens);
     logUsage("comment-intel", MODEL, message.usage);
