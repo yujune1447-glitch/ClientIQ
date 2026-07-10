@@ -6,6 +6,35 @@
 
 ---
 
+## STRATEGY UPDATE (July 2026) — supersedes everything below where in conflict
+
+The direction evolved significantly. Where the sections below (written for a cross-platform-first, build-first plan) conflict with this block, **this block wins.** Read this first.
+
+**The 5 pivots:**
+
+1. **Cross-platform-first → YouTube-FIRST wedge.** Cross-platform is now year-2 expansion. The engine is deep where YouTube's API is deep and thin where TikTok's is thin, and every competitor that actually monetizes ($29–50/mo: VidIQ, Spotter, ViewStats) is YouTube-first.
+2. **"Chat product with a loop attached" → "loop product with chat attached later."** The retention spine is **brief → prediction → detect the post → verdict vs prediction → next brief.** Briefing-first; chat is how you interrogate a briefing, not the home surface.
+3. **Lead with intelligence → SELL THE OUTCOME** — "know exactly what to make next, plus a prediction." The six-layer analysis is the ingredient, not the headline.
+4. **Build-first → VALIDATE-first.** No new code until creators pay.
+5. **Distribution is the #1 risk.** The faith audience is for **credibility / peer positioning only** — not broadcast marketing.
+
+**Current phase: validation before building (no new code yet).**
+- **Niche:** self-improvement YouTubers (~10k–500k subs, monetizing, posting ≥1×/week).
+- **Deliverable:** a **1-page Game Plan** (2–3 insights + 2 briefs, each with a prediction) — NOT a dashboard screenshot. Assembled by hand for now; **Jake is the automation.** Public-data breakdowns need no login (YouTube Data API); the deep six-layer analysis needs the creator's OAuth.
+- **Rollout:** (a) dogfood on Jake's own channel; (b) 10 creators on a trial **with a card on file** (14-day trial → $29/mo founding rate, cancel anytime) so willingness-to-pay is real; (c) they convert; (d) THEN build the v1 Monday Brief automation; (e) DM 100 more; (f) market with real results/case studies.
+- **Gate:** 3 of 10 put a card down → build v1. 1–2 → fix the pitch/niche, not code. 0 → rethink.
+
+**Versions:**
+- **v0** (now, manual concierge, no new code): connect → analytics → Jake+AI write the Game Plan → send by hand.
+- **v1** (after 3/10 pay): automate the weekly **Monday Brief** (analysis + briefs + predictions, emailed).
+- **v2** (after retention proven): live verdict loop → chat-on-brief → cross-platform expansion + cross-creator intel (Pro).
+
+**Monetization:** free-beta idea dropped. **$29/mo founding rate locked forever, 14-day trial with card up front, no free tier.** The only free thing is the one-time audit (lead magnet).
+
+**TikTok:** production app **submitted, awaiting review — PARKED.** Not part of v0; reopen year 2.
+
+---
+
 ## 1. What CreatorIQ Is — in one line
 
 CreatorIQ unifies YouTube Studio, Meta Business Suite, and TikTok Studio into one place, with an AI layer that generates **specific, structured content briefs** — exact title, hook, length, and outline — grounded in your own channel data and what's trending across all three platforms. Not generic ideas. The actual blueprint for the next thing you make.

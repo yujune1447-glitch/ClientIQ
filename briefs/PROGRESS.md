@@ -7,10 +7,25 @@
 ---
 
 ## Current Focus
-**Launch strategy:** ship cross-platform, launch on the first two platforms ready (YouTube + TikTok). Don't wait on Instagram.
-**Critical path right now:** TikTok is **in production review** — submitted, awaiting decision (~2-week clock running). Nothing to do but wait; build TikTok data/UI in parallel so it lights up on approval.
-**Instagram:** still blocked on Meta developer verification, **no timeline.**
-**YouTube:** daily quota currently **exhausted** — the 3 open verification items (watch-time card, weekly growth, Winning Hooks) still can't be checked until quota resets and a fresh pull runs.
+**PHASE: VALIDATION BEFORE BUILDING — no new code until creators pay.** (See the STRATEGY UPDATE at the top of `CreatorIQ_Master_Brief.md` for the full pivot rationale.)
+
+**Launch strategy:** **YouTube-FIRST wedge**, not cross-platform-first. The engine is deep where YouTube's API is deep; every competitor that actually monetizes ($29–50/mo: VidIQ, Spotter, ViewStats) is YouTube-first. Cross-platform is now a **year-2 expansion**, not the launch story.
+
+**Product shape:** this is a **loop product with chat attached later**, not a chat product with a loop. Retention spine = **brief → prediction → detect the post → verdict vs prediction → next brief.** Briefing-first; chat is how you interrogate a briefing, not the home surface.
+
+**Positioning:** **sell the outcome** — "know exactly what to make next, plus a prediction." The six-layer analysis is the ingredient, not the headline.
+
+**What we're doing right now (v0 manual concierge, zero new code):**
+- **Niche:** self-improvement YouTubers (~10k–500k subs, monetizing, posting ≥1×/week).
+- **Deliverable:** a **1-page Game Plan** (2–3 insights + 2 briefs, each brief with a prediction) — NOT a dashboard screenshot. Assembled by hand for now; **Jake is the automation.**
+- Public-data breakdowns need no login (YouTube Data API); the deep six-layer analysis needs the creator's OAuth.
+- **Rollout:** (a) dogfood on Jake's own channel; (b) 10 creators on a trial **with a card on file** (14-day trial → $29/mo founding rate, cancel anytime) so willingness-to-pay is real; (c) they convert; (d) THEN build the v1 Monday Brief automation; (e) DM 100 more; (f) market with real results/case studies.
+- **Gate to build v1:** **3 of 10 put a card down → build.** 1–2 → fix pitch/niche, not code. 0 → rethink.
+
+**#1 risk = distribution.** The faith audience is for **credibility / peer positioning only**, never broadcast marketing.
+
+**TikTok:** production app **SUBMITTED, awaiting review — PARKED.** Not part of v0; reopen in year 2.
+**Instagram:** still blocked on Meta developer verification, no timeline. Not a launch gate — irrelevant to the YouTube-first wedge.
 
 ---
 
@@ -38,15 +53,19 @@
 
 ---
 
-## Next Up (priority order)
-1. **Submit the `video.list` scope amendment** once the current TikTok review resolves (unlocks TikTok video data + Channel Analysis).
-2. **Verify the 3 YouTube items on next quota reset** (watch-time card, weekly growth, Winning Hooks) via a fresh pull.
-3. **UI/aesthetic polish pass** — before showing to the cohort.
-4. **Stand up the build-in-public marketing channel** — warm the startup-circle + creator-friends cohort. Distribution is the hardest unsolved problem (faith audience deliberately not used).
-5. Feedback loop Phase 2 (verdict re-grading) / Phase 3 (feed outcomes into Planning grounding) — **wait for real outcome data.**
+## Next Up (priority order) — validation motion, not build motion
+1. **Dogfood the Game Plan on Jake's own channel** — prove the 1-page deliverable (2–3 insights + 2 briefs each with a prediction) is genuinely useful before selling it.
+2. **Nail the pitch + the target list** — self-improvement YouTubers, ~10k–500k subs, monetizing, posting ≥1×/week. Assemble a DM list.
+3. **Sign 10 creators onto the card-on-file trial** (14-day → $29/mo founding rate). Deliver each Game Plan **manually** (Jake is the automation).
+4. **Watch the gate:** 3 of 10 put a card down → build v1. 1–2 → fix pitch/niche, not code. 0 → rethink.
+5. **THEN (only after 3/10 pay) build v1:** automate the weekly **Monday Brief** (analysis + briefs + predictions, emailed).
+6. **Solve distribution** (the #1 risk) — DM 100 more, then market with real results/case studies. Faith audience = credibility/peer positioning only, never broadcast.
 
-### Backlog (low priority)
-- **Account-merge gap:** a person who signs up TikTok-first AND YouTube-first creates two separate `users` rows (no identity linking across platforms yet). Fine for now; revisit if it bites.
+### Deferred (post-validation / later versions)
+- **v2 (after retention proven):** live verdict loop → chat-on-brief → cross-platform expansion + cross-creator intel (Pro tier).
+- **TikTok:** production app submitted & parked; reopen year 2. `video.list` scope amendment waits until then.
+- **Instagram:** passive Meta ticket; never a gate.
+- **Account-merge gap:** TikTok-first + YouTube-first signups create two `users` rows. Irrelevant while YouTube-first; revisit at cross-platform expansion.
 
 ---
 
@@ -57,19 +76,24 @@
 
 ---
 
-## Blocked / Waiting on External
-- **Instagram** — blocked on Meta developer/SMS verification. Support ticket pending, **no timeline.** Check the ticket (email on the Meta dev account + App Dashboard → Support) every few days. Do NOT retry the same SMS troubleshooting loop. Never the launch gate.
-- **TikTok production access** — **submitted, in review** (~2-week decision window). Sandbox returns test accounts only (all zeros) until approved. `video.list` scope amendment goes in once this resolves.
+## Blocked / Waiting on External (all PARKED — none gate v0)
+- **TikTok production access** — submitted, in review, **PARKED.** Not part of v0; reopen year 2 when cross-platform expansion begins. `video.list` scope amendment waits until then.
+- **Instagram** — blocked on Meta developer/SMS verification, no timeline. **PARKED.** Irrelevant to the YouTube-first wedge; never a launch gate.
 
 ---
 
 ## Key Decisions Made (don't relitigate)
-- Launch cross-platform, not YouTube-only. YouTube + TikTok is enough to launch; IG follows.
-- NOT marketing to the faith audience — go to market via startup circle + creator friends + a dedicated new channel.
+- **YouTube-FIRST wedge, not cross-platform-first.** Engine is deep where YouTube's API is deep; every monetizing competitor is YouTube-first. Cross-platform = year-2 expansion.
+- **Loop product with chat attached later**, not a chat product with a loop. Retention spine = brief → prediction → detect the post → verdict vs prediction → next brief. Briefing-first.
+- **Sell the outcome** ("know exactly what to make next + a prediction"). Six-layer analysis is the ingredient, not the headline.
+- **Validate before building** — no new code until 3 of 10 creators put a card down.
+- **Distribution is the #1 risk.** Faith audience = credibility/peer positioning only, never broadcast marketing.
+- **Monetization:** free-beta idea dropped. **$29/mo founding rate locked forever, 14-day trial with card up front, no free tier.** The only free thing is the one-time audit (lead magnet).
+- **v0 = manual concierge** (connect → analytics → Jake+AI write the Game Plan → send by hand). v1 automates the Monday Brief only after 3/10 pay. v2 = verdict loop, then chat-on-brief, then expansion.
+- **TikTok:** production app submitted & PARKED — not part of v0, reopen year 2.
 - Stats always median, not mean; confidence-gate n<3.
 - Recompute (0 quota) for verifying changes; Re-analyze (hits API) only for fresh data.
 - CTR permanently unavailable from YouTube API — removed, not a bug.
-- Submitting TikTok on the `vercel.app` domain — NO custom domain for now (not a blocker; pages verify fine). Revisit a domain later for marketing.
 - Model split: Opus for planning/strategy, Sonnet for execution in Claude Code.
 
 ---
