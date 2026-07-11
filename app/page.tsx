@@ -37,11 +37,11 @@ export default async function LandingPage() {
         </p>
 
         <a
-          href="/api/auth/youtube"
+          href="/api/checkout"
           className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
         >
           <PlayCircle className="w-4 h-4" />
-          Connect your channel · Start free trial
+          Start free trial
           <ArrowRight className="w-4 h-4" />
         </a>
         <span className="text-xs text-zinc-600 mt-3">Free to try · No credit card required</span>

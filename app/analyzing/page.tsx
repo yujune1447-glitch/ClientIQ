@@ -114,6 +114,9 @@ function AnalyzingContent() {
             if (msg.message === "needs_reauth") {
               source.close();
               router.replace("/api/auth/youtube");
+            } else if (msg.message === "subscription_required") {
+              source.close();
+              router.replace("/api/checkout");
             } else {
               setError(msg.message as string);
               source.close();

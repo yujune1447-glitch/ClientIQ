@@ -26,6 +26,7 @@ import { saveSnapshot } from "@/lib/snapshot";
 import { fetchInstagramData, refreshPageToken } from "@/lib/instagram";
 import { fetchTikTokData, refreshTikTokToken } from "@/lib/tiktok";
 import { sendBriefEmail } from "@/lib/email";
+import { getUserSubscription, hasActiveAccess } from "@/lib/subscription";
 import { QuotaBudget } from "@/lib/quota";
 import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary, RawVideo } from "@/types";
 
@@ -64,6 +65,10 @@ export async function GET(request: NextRequest) {
         const userId = request.cookies.get("user_id")?.value;
         console.log("[analyze] Request received. user_id_from_cookie=%s", userId ?? "MISSING");
         if (!userId) { emit({ event: "error", message: "Not authenticated" }); return; }
+
+        // Gate brief generation behind an active/trialing subscription.
+        const sub = await getUserSubscription(userId);
+        if (!hasActiveAccess(sub?.status)) { emit({ event: "error", message: "subscription_required" }); return; }
 
         const forceRefresh = request.nextUrl.searchParams.get("force") === "true";
         const quota = new QuotaBudget(QUOTA_BUDGET);

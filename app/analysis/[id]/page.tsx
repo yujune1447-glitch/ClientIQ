@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { BriefView } from "@/app/components/BriefView";
 import { MarkRead } from "@/app/components/MarkRead";
+import { getUserSubscription, hasActiveAccess } from "@/lib/subscription";
 import type { ChannelSummary, ContentBrief } from "@/types";
 
 export default async function AnalysisPage({
@@ -15,6 +16,10 @@ export default async function AnalysisPage({
   const userId = cookieStore.get("user_id")?.value;
 
   if (!userId) redirect("/");
+
+  // Gate the brief behind an active/trialing subscription.
+  const sub = await getUserSubscription(userId);
+  if (!hasActiveAccess(sub?.status)) redirect("/api/checkout");
 
   const supabase = createAdminClient();
 
