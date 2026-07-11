@@ -11,6 +11,13 @@ const TIKTOK_CLIENT_SECRET = Deno.env.get("TIKTOK_CLIENT_SECRET")!;
 const INSTAGRAM_APP_ID = Deno.env.get("INSTAGRAM_APP_ID")!;
 const INSTAGRAM_APP_SECRET = Deno.env.get("INSTAGRAM_APP_SECRET")!;
 
+// Generation model — overridable so a slow run can fall back to a faster model
+// (e.g. set BRIEF_MODEL=claude-haiku-4-5). Defaults to the higher-quality model.
+const BRIEF_MODEL = Deno.env.get("BRIEF_MODEL") ?? "claude-sonnet-4-6";
+
+// Supabase Edge Runtime background-task API (declared for type-checking).
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
+
 const YT = "https://www.googleapis.com/youtube/v3";
 const YT_ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports";
 const FB = "https://graph.facebook.com/v18.0";
@@ -525,11 +532,11 @@ function buildPrompt(
   };
 
   const fmtVideo = (v: typeof topPerformers[0], i: number) => {
-    const comments = v.topComments?.slice(0, 5).map((c) => `"${c.slice(0, 120)}"`).join(" | ") ?? "none";
+    const comments = v.topComments?.slice(0, 3).map((c) => `"${c.slice(0, 120)}"`).join(" | ") ?? "none";
     return `${i + 1}. "${v.title}"\n   Views: ${fmt(v.viewCount)} (${v.viewsVsAverage > 0 ? "+" : ""}${v.viewsVsAverage}% vs avg) | Score: ${v.performanceScore}\n   CTR: ${v.ctr?.toFixed(2) ?? "N/A"}% | Retention: ${v.averageViewPercentage?.toFixed(1) ?? "N/A"}% | Published: ${v.publishedAt.slice(0, 10)}\n   Top comments: ${comments}`;
   };
 
-  let prompt = `CHANNEL INTELLIGENCE REPORT\n${"=".repeat(30)}\nChannel: ${channel.title}${channel.handle ? ` (@${channel.handle})` : ""}\nSubscribers: ${fmt(channel.subscriberCount)}\nTotal videos: ${totalVideosAnalysed}\nDate range: ${String(dateRange.from).slice(0, 10)} → ${String(dateRange.to).slice(0, 10)}\n\nCHANNEL AVERAGES\nViews: ${fmt(averages.views)} | Likes: ${fmt(averages.likes)} | Comments: ${fmt(averages.comments)}\nCTR: ${averages.ctr}% | Retention: ${averages.retentionRate}%\n\nTOP 10 PERFORMING VIDEOS\n${topPerformers.map(fmtVideo).join("\n\n")}\n\nBOTTOM 10 PERFORMING VIDEOS\n${bottomPerformers.map(fmtVideo).join("\n\n")}\n\nOUTLIERS\n${outliers.length ? outliers.map((v, i) => `${i + 1}. "${v.title}" — ${fmt(v.viewCount)} views`).join("\n") : "None"}`;
+  let prompt = `CHANNEL INTELLIGENCE REPORT\n${"=".repeat(30)}\nChannel: ${channel.title}${channel.handle ? ` (@${channel.handle})` : ""}\nSubscribers: ${fmt(channel.subscriberCount)}\nTotal videos: ${totalVideosAnalysed}\nDate range: ${String(dateRange.from).slice(0, 10)} → ${String(dateRange.to).slice(0, 10)}\n\nCHANNEL AVERAGES\nViews: ${fmt(averages.views)} | Likes: ${fmt(averages.likes)} | Comments: ${fmt(averages.comments)}\nCTR: ${averages.ctr}% | Retention: ${averages.retentionRate}%\n\nTOP 5 PERFORMING VIDEOS\n${topPerformers.slice(0, 5).map(fmtVideo).join("\n\n")}\n\nBOTTOM 5 PERFORMING VIDEOS\n${bottomPerformers.slice(0, 5).map(fmtVideo).join("\n\n")}\n\nOUTLIERS\n${outliers.length ? outliers.map((v, i) => `${i + 1}. "${v.title}" — ${fmt(v.viewCount)} views`).join("\n") : "None"}`;
 
   if (nicheSummary) {
     const n = nicheSummary as ReturnType<typeof processNicheData>;
@@ -647,7 +654,7 @@ async function callClaude(prompt: string) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 8000, system, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: BRIEF_MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: prompt }] }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Anthropic API error");
@@ -759,7 +766,9 @@ async function processCreator(
 
   // ── Score + comments ──────────────────────────────────────────────────────
   const scored = scoreVideos(rawVideos as Record<string, unknown>[], analyticsMap);
-  const commentTargetIds = [...scored.sorted.slice(0, 10), ...scored.sorted.slice(-10).reverse()].map((v) => v.id);
+  // Trim comment fetch to the top 5 + bottom 5 videos (was 10 + 10) to cut both
+  // YouTube API calls and the comment corpus sent to Claude, reducing per-creator time.
+  const commentTargetIds = [...scored.sorted.slice(0, 5), ...scored.sorted.slice(-5).reverse()].map((v) => v.id);
   const commentsMap = await fetchComments(commentTargetIds, accessToken);
 
   const authorCounts = new Map<string, number>();
@@ -867,15 +876,24 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: connections } = await supabase.from("youtube_connections").select("*, users!inner(niche, email)").not("refresh_token", "is", null);
+  const conns = connections ?? [];
 
-  const results: { userId: string; status: string; error?: string }[] = [];
-  const START = Date.now();
+  // Each creator's brief (YouTube pull + 2 Claude calls) can run ~150s, past the
+  // request wall-clock limit that was killing the function (546). Run the whole
+  // loop as a background task so we return immediately and generation continues
+  // after the response is sent.
+  const run = async () => {
+    for (const conn of conns) {
+      try {
+        await processCreator(conn, supabase);
+        console.log("[weekly-brief] ok — user %s", conn.user_id);
+      } catch (err) {
+        console.error("[weekly-brief] error — user %s:", conn.user_id, err instanceof Error ? err.message : String(err));
+      }
+    }
+    console.log("[weekly-brief] finished background run — %d creators", conns.length);
+  };
 
-  for (const conn of connections ?? []) {
-    if (Date.now() - START > 120_000) { results.push({ userId: conn.user_id, status: "skipped", error: "time limit" }); continue; }
-    try { await processCreator(conn, supabase); results.push({ userId: conn.user_id, status: "ok" }); }
-    catch (err) { results.push({ userId: conn.user_id, status: "error", error: err instanceof Error ? err.message : String(err) }); }
-  }
-
-  return Response.json({ processed: results.length, results });
+  EdgeRuntime.waitUntil(run());
+  return Response.json({ accepted: true, creators: conns.length });
 });

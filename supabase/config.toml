@@ -1,0 +1,8 @@
+project_id = "creatoriq"
+
+# The weekly-brief function authenticates callers with its own CRON_SECRET bearer
+# check, not a Supabase JWT. Disable platform JWT verification so the pg_cron call
+# (and manual invokes) reach the function instead of being rejected with 401.
+[functions.weekly-brief]
+enabled = true
+verify_jwt = false
