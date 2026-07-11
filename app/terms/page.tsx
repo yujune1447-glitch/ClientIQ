@@ -3,7 +3,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-[#09090b] text-white">
       <div className="max-w-2xl mx-auto px-6 py-16">
         <a href="/" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-10 block">
-          ← Back to Aion
+          ← Back to Listvin
         </a>
 
         <h1 className="text-2xl font-semibold mb-1">Terms of Service</h1>
@@ -13,9 +13,9 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">The service</h2>
             <p>
-              Aion is a content intelligence platform for creators. It connects to your YouTube
+              Listvin is a content intelligence platform for creators. It connects to your YouTube
               account, analyses your channel and video performance data, and uses AI to generate
-              structured content briefs, weekly analyses, and content ideas. By using Aion you agree
+              structured content briefs, weekly analyses, and content ideas. By using Listvin you agree
               to these terms.
             </p>
           </section>
@@ -23,7 +23,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">YouTube Terms of Service and Google Privacy Policy</h2>
             <p>
-              Aion uses YouTube API Services. By using Aion, you agree to be bound by the{" "}
+              Listvin uses YouTube API Services. By using Listvin, you agree to be bound by the{" "}
               <a
                 href="https://www.youtube.com/t/terms"
                 target="_blank"
@@ -32,7 +32,7 @@ export default function TermsPage() {
               >
                 YouTube Terms of Service
               </a>
-              , and you acknowledge that information Aion obtains through YouTube API Services is
+              , and you acknowledge that information Listvin obtains through YouTube API Services is
               handled in accordance with the{" "}
               <a
                 href="https://policies.google.com/privacy"
@@ -43,7 +43,7 @@ export default function TermsPage() {
                 Google Privacy Policy
               </a>
               . If you do not agree to the YouTube Terms of Service, you must not connect your YouTube
-              account or use Aion.
+              account or use Listvin.
             </p>
           </section>
 
@@ -51,7 +51,7 @@ export default function TermsPage() {
             <h2 className="text-base font-medium text-white mb-2">Your account</h2>
             <p>
               You are responsible for maintaining the security of your account and the accuracy of
-              the information you provide. You must not share your account with others or use Aion to
+              the information you provide. You must not share your account with others or use Listvin to
               analyse channels you do not own or have explicit permission to access. We reserve the
               right to suspend accounts that violate these terms or the terms of any connected
               platform.
@@ -62,17 +62,17 @@ export default function TermsPage() {
             <h2 className="text-base font-medium text-white mb-2">Acceptable use</h2>
             <p>You agree not to:</p>
             <ul className="mt-3 space-y-1.5 list-disc list-inside text-zinc-500">
-              <li>Attempt to reverse-engineer, scrape, or extract data from Aion beyond normal use</li>
+              <li>Attempt to reverse-engineer, scrape, or extract data from Listvin beyond normal use</li>
               <li>Use the service to generate content that violates the terms of any connected platform, including the YouTube Terms of Service</li>
               <li>Attempt to circumvent any rate limits, access controls, or authentication mechanisms</li>
-              <li>Resell or redistribute Aion-generated content or data as a standalone product</li>
+              <li>Resell or redistribute Listvin-generated content or data as a standalone product</li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-base font-medium text-white mb-2">Subscription and billing</h2>
             <p>
-              Aion offers a free tier and paid subscription plans. Paid plans are billed monthly or
+              Listvin offers a free tier and paid subscription plans. Paid plans are billed monthly or
               annually. You can cancel at any time; cancellation takes effect at the end of the current
               billing period, after which your account will revert to the free tier. We do not offer
               refunds for partial billing periods except where required by law.
@@ -86,9 +86,9 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">AI-generated content</h2>
             <p>
-              Content briefs and analysis generated by Aion are produced by AI and are provided for
+              Content briefs and analysis generated by Listvin are produced by AI and are provided for
               informational purposes. They are not guarantees of performance. You retain full ownership
-              of any content you create using Aion&apos;s suggestions. We make no claim over your content
+              of any content you create using Listvin&apos;s suggestions. We make no claim over your content
               or creative output.
             </p>
           </section>
@@ -96,7 +96,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">Availability</h2>
             <p>
-              We aim to keep Aion available and reliable, but we don&apos;t guarantee uninterrupted
+              We aim to keep Listvin available and reliable, but we don&apos;t guarantee uninterrupted
               access. We may perform maintenance, release updates, or temporarily suspend the service
               without prior notice. We are not liable for any losses resulting from downtime or service
               interruptions.
@@ -106,7 +106,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">Limitation of liability</h2>
             <p>
-              To the fullest extent permitted by law, Aion and its operators are not liable for any
+              To the fullest extent permitted by law, Listvin and its operators are not liable for any
               indirect, incidental, or consequential damages arising from your use of the service,
               including loss of revenue, data, or business opportunities. Our total liability to you for
               any claim is limited to the amount you paid us in the 12 months preceding the claim, or
@@ -117,7 +117,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-medium text-white mb-2">Termination</h2>
             <p>
-              You may stop using Aion at any time. We may suspend or terminate your access if you
+              You may stop using Listvin at any time. We may suspend or terminate your access if you
               violate these terms, with or without notice depending on the severity of the violation. On
               termination, your data will be retained for 30 days then permanently deleted, unless you
               request earlier deletion.
@@ -136,8 +136,8 @@ export default function TermsPage() {
             <h2 className="text-base font-medium text-white mb-2">Contact</h2>
             <p>
               Questions about these terms:{" "}
-              <a href="mailto:legal@aion.app" className="text-zinc-300 hover:text-white underline transition-colors">
-                legal@aion.app
+              <a href="mailto:legal@listvin.app" className="text-zinc-300 hover:text-white underline transition-colors">
+                legal@listvin.app
               </a>
             </p>
           </section>
