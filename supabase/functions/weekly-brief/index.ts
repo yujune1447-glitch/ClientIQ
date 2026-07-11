@@ -560,6 +560,86 @@ function buildPrompt(
   return prompt;
 }
 
+// ─── Brief email (Resend REST — Deno can't use the npm SDK) ─────────────────────
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Mirrors lib/email.ts sendBriefEmail. Non-throwing: any failure is logged and
+// swallowed so a bad send can never abort the per-creator loop.
+async function sendBriefEmail(opts: {
+  to: string;
+  analysisId: string;
+  channelTitle: string;
+  headline: string;
+  ideaTitle: string;
+  estimatedPerformance: string;
+}): Promise<void> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  const from = Deno.env.get("EMAIL_FROM");
+  if (!apiKey || !from) {
+    console.warn("[email] RESEND_API_KEY or EMAIL_FROM not set — skipping brief email");
+    return;
+  }
+  if (!opts.to) {
+    console.warn("[email] No recipient email — skipping brief email for analysis %s", opts.analysisId);
+    return;
+  }
+
+  const appUrl = Deno.env.get("APP_URL") ?? "";
+  const link = `${appUrl}/analysis/${opts.analysisId}`;
+
+  const html = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#111113;border:1px solid #27272a;border-radius:16px;padding:32px;">
+            <tr>
+              <td>
+                <p style="margin:0 0 24px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#71717a;">Your weekly brief</p>
+                <h1 style="margin:0 0 24px;font-size:20px;line-height:1.4;font-weight:600;color:#ffffff;">${escapeHtml(opts.headline)}</h1>
+                <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:20px;margin:0 0 24px;">
+                  <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:#71717a;">This week's idea</p>
+                  <p style="margin:0 0 12px;font-size:16px;line-height:1.5;font-weight:600;color:#fafafa;">${escapeHtml(opts.ideaTitle)}</p>
+                  <p style="margin:0;font-size:14px;line-height:1.6;color:#a1a1aa;">${escapeHtml(opts.estimatedPerformance)}</p>
+                </div>
+                <a href="${escapeHtml(link)}" style="display:inline-block;background:#ff3040;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 28px;border-radius:10px;">View full brief</a>
+                <p style="margin:24px 0 0;font-size:12px;color:#52525b;">${escapeHtml(opts.channelTitle)} · CreatorIQ</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      from,
+      to: opts.to,
+      subject: `Your weekly brief for ${opts.channelTitle}`,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    console.error("[email] Resend send failed for analysis %s:", opts.analysisId, await res.text());
+  } else {
+    console.log("[email] Brief email sent to %s (analysis %s)", opts.to, opts.analysisId);
+  }
+}
+
 async function callClaude(prompt: string) {
   const system = `You are an expert YouTube content strategist with cross-platform intelligence. Every recommendation MUST cite a specific data point from the channel or niche data. Return ONLY valid JSON — no markdown:
 {"brief":{"weeklyIdea":"specific video concept","titleOptions":["title using creator's best CTR pattern","title using niche format","curiosity-gap angle from comment signals"],"hook":{"openingLine":"exact first sentence","setup":"0-10s: what you establish","tension":"10-20s: conflict or curiosity gap","payoff":"20-30s: explicit value promise"},"recommendedLength":"specific duration with data reason","format":"production approach grounded in retention data","estimatedPerformance":"honest projection vs channel average citing comparable video","keyTalkingPoints":["point with data reason","point 2","point 3","point 4"],"thumbnail":{"concept":"one-sentence visual concept","colours":"specific palette with CTR data reason","composition":"layout and framing with data reason","textOverlay":"2-5 words max","faceExpression":"expression direction if relevant"},"dataEvidence":[{"claim":"Why this topic","evidence":"specific metric/video/stat"},{"claim":"Why this length","evidence":"specific data"},{"claim":"Why this thumbnail","evidence":"specific data"},{"claim":"Why this hook","evidence":"specific data"}]},"autopsy":{"overallTrend":"one honest sentence with numbers","whatIsWorking":["specific data-backed finding","finding 2","finding 3","finding 4"],"whatIsNotWorking":["specific data-backed finding","finding 2","finding 3"],"audienceInsights":"who this audience is with specifics","topPerformerPattern":"precise shared pattern with numbers","bottomPerformerPattern":"precise shared pattern with numbers","actionableAdvice":["specific action with rationale","action 2","action 3","action 4"]}}`;
@@ -611,7 +691,7 @@ function buildContentBreakdown(top: { title: string; performanceScore: number; v
 // ─── Main processor ───────────────────────────────────────────────────────────
 
 async function processCreator(
-  conn: { id: string; user_id: string; refresh_token: string; access_token: string; token_expires_at: string; channel_id: string; channel_title: string; channel_handle?: string; channel_thumbnail?: string; subscriber_count: number; users: { niche?: string } },
+  conn: { id: string; user_id: string; refresh_token: string; access_token: string; token_expires_at: string; channel_id: string; channel_title: string; channel_handle?: string; channel_thumbnail?: string; subscriber_count: number; users: { niche?: string; email?: string } },
   supabase: ReturnType<typeof createClient>
 ) {
   let accessToken = conn.access_token;
@@ -757,6 +837,26 @@ async function processCreator(
       content_breakdown: contentBreakdown,
       comment_sentiment: commentIntelligence.sentimentBreakdown,
     });
+
+    // ── Weekly brief email ──────────────────────────────────────────────────
+    const channelTitle = summary.channel.title ?? "your channel";
+    const sp = (summary as unknown as { successPatterns?: { synthesis?: { headline?: string } } }).successPatterns;
+    const headline = sp?.synthesis?.headline ?? `This week's brief for ${channelTitle}`;
+    const predictionText = brief.prediction
+      ? [brief.prediction.projectedOutcome, brief.prediction.basis].filter(Boolean).join(" — ")
+      : (brief.estimatedPerformance ?? "");
+    try {
+      await sendBriefEmail({
+        to: conn.users?.email ?? "",
+        analysisId: (analysis as { id: string }).id,
+        channelTitle,
+        headline,
+        ideaTitle: brief.weeklyIdea ?? "",
+        estimatedPerformance: predictionText,
+      });
+    } catch (err) {
+      console.error("[weekly-brief] sendBriefEmail failed (non-fatal):", err instanceof Error ? err.message : String(err));
+    }
   }
 }
 
@@ -766,7 +866,7 @@ Deno.serve(async (req) => {
   if (req.headers.get("Authorization") !== `Bearer ${CRON_SECRET}`) return new Response("Unauthorized", { status: 401 });
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const { data: connections } = await supabase.from("youtube_connections").select("*, users!inner(niche)").not("refresh_token", "is", null);
+  const { data: connections } = await supabase.from("youtube_connections").select("*, users!inner(niche, email)").not("refresh_token", "is", null);
 
   const results: { userId: string; status: string; error?: string }[] = [];
   const START = Date.now();
