@@ -106,7 +106,7 @@ function AnalyzingContent() {
             source.close();
             const analysisId = msg.analysisId as string;
             if (analysisId) {
-              router.push(`/workspace?analysis=${analysisId}`);
+              router.push(`/analysis/${analysisId}`);
             }
             break;
           }

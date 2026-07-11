@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Zap, PlayCircle, Camera, Music2, LayoutDashboard,
   MessageSquare, ChevronDown, ChevronRight, AlertCircle,
-  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb, RefreshCw, Database,
+  Send, Loader2, X, Sparkles, Plus, Settings, Lightbulb, RefreshCw, Database, FileText,
 } from "lucide-react";
 import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
 import { DashboardView } from "@/app/components/DashboardView";
@@ -99,6 +99,7 @@ function saveConversations(convs: StoredConversation[]) {
 
 export default function WorkspaceShell({
   initialView,
+  sidebarAnalyses,
   selectedAnalysisId,
   selectedAnalysis,
   ytConn,
@@ -528,6 +529,38 @@ export default function WorkspaceShell({
               <span className="text-[12px] font-medium">Saved Ideas</span>
             </button>
           </div>
+
+          {/* Divider */}
+          <div className="mx-3 border-t border-[#1f1f22] mt-2" />
+
+          {/* Analyses — each links to its full brief page */}
+          {sidebarAnalyses.length > 0 && (
+            <div className="px-2 pt-1">
+              <p className="px-3 py-1 text-[10px] text-zinc-700 uppercase tracking-widest font-medium">
+                Analyses
+              </p>
+              <div className="mt-0.5 space-y-0.5">
+                {sidebarAnalyses.map((a) => (
+                  <a
+                    key={a.id}
+                    href={`/analysis/${a.id}`}
+                    className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                      a.id === effectiveAnalysisId
+                        ? "bg-[#1c1c1f] text-white"
+                        : "text-zinc-500 hover:bg-[#161618] hover:text-zinc-300"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[12px] font-medium truncate flex-1">{a.channelTitle}</span>
+                    {a.isUnread && <span className="w-1.5 h-1.5 rounded-full bg-[#ff3040] shrink-0" />}
+                    <span className="text-[10px] text-zinc-600 group-hover:text-[#ff3040] transition-colors shrink-0">
+                      View brief
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Divider */}
           <div className="mx-3 border-t border-[#1f1f22] mt-2" />
