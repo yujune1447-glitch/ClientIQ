@@ -640,20 +640,26 @@ export async function GET(request: NextRequest) {
           console.log("[analyze] Analysis updated successfully.");
         }
 
-        // Fire the weekly brief email server-side. Non-blocking (not awaited) so the
-        // streamed response isn't delayed; sendBriefEmail catches all its own errors.
-        if (!updateError && userData?.email) {
-          void sendBriefEmail({
-            to: userData.email,
-            analysisId: analysis.id,
-            summary,
-            ideaTitle: brief.weeklyIdea,
-            estimatedPerformance: brief.estimatedPerformance,
-          });
-        }
-
         console.log("[analyze] save (brief) stage took %dms", Date.now() - saveT0);
         emit({ event: "step_done", step: "save", ms: Date.now() - saveT0 });
+
+        // Send the weekly brief email server-side, awaited so the serverless function
+        // can't suspend before the send finishes. sendBriefEmail catches all its own
+        // errors; the extra try/catch guarantees a failed send never breaks the response.
+        if (!updateError && userData?.email) {
+          try {
+            await sendBriefEmail({
+              to: userData.email,
+              analysisId: analysis.id,
+              summary,
+              ideaTitle: brief.weeklyIdea,
+              estimatedPerformance: brief.estimatedPerformance,
+            });
+          } catch (err) {
+            console.error("[analyze] sendBriefEmail failed (non-fatal):", err instanceof Error ? err.message : String(err));
+          }
+        }
+
         emit({ event: "complete", analysisId: analysis.id, quotaSummary: quota.toJSON() });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Analysis failed";
