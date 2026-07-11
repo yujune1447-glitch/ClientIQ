@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase-admin";
-import { AnalysisContent, type AnalysisData } from "@/app/components/AnalysisContent";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, InstagramSummary, TikTokSummary, CommentIntelligence, ChannelSnapshot } from "@/types";
+import { BriefView } from "@/app/components/BriefView";
+import { MarkRead } from "@/app/components/MarkRead";
+import type { ChannelSummary, ContentBrief } from "@/types";
 
 export default async function AnalysisPage({
   params,
@@ -19,36 +20,25 @@ export default async function AnalysisPage({
 
   const { data: analysis } = await supabase
     .from("analyses")
-    .select("id,user_id,summary,brief,autopsy,instagram_summary,tiktok_summary,comment_intelligence,is_unread,generated_by,created_at,weekly_subs_gained,weekly_subs_lost")
+    .select("id,user_id,summary,brief,is_unread")
     .eq("id", id)
     .single();
 
   if (!analysis || analysis.user_id !== userId) notFound();
 
-  const { data: snapshots } = await supabase
-    .from("channel_snapshots")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true });
-
-  const data: AnalysisData = {
-    id: analysis.id,
-    createdAt: analysis.created_at,
-    summary: analysis.summary as ChannelSummary,
-    brief: (analysis.brief ?? null) as ContentBrief | null,
-    autopsy: (analysis.autopsy ?? null) as ContentAutopsy | null,
-    igSummary: (analysis.instagram_summary ?? null) as InstagramSummary | null,
-    tikTokSummary: (analysis.tiktok_summary ?? null) as TikTokSummary | null,
-    commentIntel: (analysis.comment_intelligence ?? null) as CommentIntelligence | null,
-    isUnread: analysis.is_unread === true,
-    isScheduled: analysis.generated_by === "scheduled",
-    weeklySubsGained: analysis.weekly_subs_gained ?? null,
-    weeklySubsLost: analysis.weekly_subs_lost ?? null,
-  };
+  const brief = (analysis.brief ?? null) as ContentBrief | null;
+  const summary = analysis.summary as ChannelSummary;
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
-      <AnalysisContent analysis={data} snapshots={(snapshots ?? []) as ChannelSnapshot[]} />
+      {analysis.is_unread === true && <MarkRead analysisId={analysis.id} />}
+      {brief ? (
+        <BriefView brief={brief} summary={summary} />
+      ) : (
+        <div className="max-w-3xl mx-auto px-6 py-16 text-center">
+          <p className="text-sm text-zinc-500">Your weekly brief is being prepared. Check back shortly.</p>
+        </div>
+      )}
     </div>
   );
 }
