@@ -25,6 +25,7 @@ import { searchNicheVideoIds, getNicheVideoDetails, processNicheData } from "@/l
 import { saveSnapshot } from "@/lib/snapshot";
 import { fetchInstagramData, refreshPageToken } from "@/lib/instagram";
 import { fetchTikTokData, refreshTikTokToken } from "@/lib/tiktok";
+import { sendBriefEmail } from "@/lib/email";
 import { QuotaBudget } from "@/lib/quota";
 import type { YouTubeChannel, NicheSummary, InstagramSummary, TikTokSummary, RawVideo } from "@/types";
 
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
 
         const [{ data: conn, error: connErr }, { data: userData }, { data: igConn }, { data: ttConn }] = await Promise.all([
           supabase.from("youtube_connections").select("*").eq("user_id", userId).single(),
-          supabase.from("users").select("niche").eq("id", userId).single(),
+          supabase.from("users").select("niche, email").eq("id", userId).single(),
           supabase.from("instagram_connections").select("*").eq("user_id", userId).maybeSingle(),
           supabase.from("tiktok_connections").select("*").eq("user_id", userId).maybeSingle(),
         ]);
@@ -637,6 +638,18 @@ export async function GET(request: NextRequest) {
           console.error("[analyze] Supabase analyses UPDATE failed. code=%s message=%s", updateError.code, updateError.message);
         } else {
           console.log("[analyze] Analysis updated successfully.");
+        }
+
+        // Fire the weekly brief email server-side. Non-blocking (not awaited) so the
+        // streamed response isn't delayed; sendBriefEmail catches all its own errors.
+        if (!updateError && userData?.email) {
+          void sendBriefEmail({
+            to: userData.email,
+            analysisId: analysis.id,
+            summary,
+            ideaTitle: brief.weeklyIdea,
+            estimatedPerformance: brief.estimatedPerformance,
+          });
         }
 
         console.log("[analyze] save (brief) stage took %dms", Date.now() - saveT0);
