@@ -7,6 +7,12 @@ const fmt = (n: number) =>
 
 const hasText = (s?: string | null): s is string => typeof s === "string" && s.trim().length > 0;
 
+const CONFIDENCE_CHIP: Record<"low" | "medium" | "high", string> = {
+  high: "bg-emerald-900/30 text-emerald-400 border-emerald-800/30",
+  medium: "bg-amber-900/30 text-amber-500 border-amber-800/30",
+  low: "bg-zinc-800/40 text-zinc-400 border-zinc-700/40",
+};
+
 // A labelled sub-field used inside structured sections (hook phases, thumbnail spec).
 function Field({ label, value }: { label: string; value?: string }) {
   if (!hasText(value)) return null;
@@ -27,6 +33,7 @@ export function BriefView({ brief, summary }: Props) {
   const { channel } = summary;
   const hook = brief.hook;
   const thumbnail = brief.thumbnail;
+  const prediction = brief.prediction;
   const titleOptions = (brief.titleOptions ?? []).filter(hasText);
   const talkingPoints = (brief.keyTalkingPoints ?? []).filter(hasText);
   const dataEvidence = (brief.dataEvidence ?? []).filter((d) => hasText(d?.claim) || hasText(d?.evidence));
@@ -189,8 +196,32 @@ export function BriefView({ brief, summary }: Props) {
         </div>
       )}
 
-      {/* The prediction — visually distinct */}
-      {hasText(brief.estimatedPerformance) && (
+      {/* The prediction — visually distinct. Prefers the structured object;
+          falls back to the legacy flat string for older stored briefs. */}
+      {prediction && (hasText(prediction.projectedOutcome) || hasText(prediction.basis)) ? (
+        <div className="bg-[#0d160f] border border-emerald-500/25 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-emerald-900/30">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+            <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">The Prediction</p>
+            {prediction.confidence && (
+              <span className={`ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider ${CONFIDENCE_CHIP[prediction.confidence]}`}>
+                {prediction.confidence} confidence
+              </span>
+            )}
+          </div>
+          <div className="p-5 space-y-3">
+            {hasText(prediction.projectedOutcome) && (
+              <p className="text-lg font-semibold text-zinc-100 leading-snug">{prediction.projectedOutcome}</p>
+            )}
+            {hasText(prediction.basis) && (
+              <div>
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">Benchmarked against</p>
+                <p className="text-[13px] text-zinc-400 leading-snug">{prediction.basis}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : hasText(brief.estimatedPerformance) ? (
         <div className="bg-[#0d160f] border border-emerald-500/25 rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-4 border-b border-emerald-900/30">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
@@ -200,7 +231,7 @@ export function BriefView({ brief, summary }: Props) {
             <p className="text-[14px] text-zinc-100 leading-relaxed">{brief.estimatedPerformance}</p>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

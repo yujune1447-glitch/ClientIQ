@@ -323,13 +323,22 @@ export interface BriefDataPoint {
   evidence: string;
 }
 
+export interface BriefPrediction {
+  projectedOutcome: string;
+  basis: string;
+  confidence: "low" | "medium" | "high";
+}
+
 export interface ContentBrief {
   weeklyIdea: string;
   titleOptions: string[];
   hook: BriefHook | string;
   recommendedLength: string;
   format: string;
-  estimatedPerformance: string;
+  prediction?: BriefPrediction;
+  // Legacy flat projection retained for briefs generated before the structured
+  // `prediction` object existed. New briefs populate `prediction` instead.
+  estimatedPerformance?: string;
   keyTalkingPoints: string[];
   thumbnail: BriefThumbnail | string;
   thumbnailDirection?: string;

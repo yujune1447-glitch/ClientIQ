@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logUsage } from "@/lib/usage";
-import type { ChannelSummary, ContentBrief, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence, SuccessPatterns, ChannelSynthesis } from "@/types";
+import type { ChannelSummary, ContentBrief, BriefPrediction, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence, SuccessPatterns, ChannelSynthesis } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = "claude-sonnet-4-6";
@@ -153,7 +153,7 @@ ${topVideos.map((v, i) => {
 
 const SYSTEM = `You are an expert YouTube content strategist. You receive a creator's full channel intelligence report plus optional niche, Instagram, and TikTok data.
 
-Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "niche median retention is 42%", "your #1 video got 3.2× your average views", "your top 3 videos all averaged 2.8× channel avg views"). Generic advice is not acceptable.
+Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "niche median retention is 42%", "your #1 video got 3.2× your average views", "your top 3 videos all averaged 2.8× channel avg views"). Generic advice is not acceptable. This applies to the prediction too: projectedOutcome and basis must cite the creator's actual numbers — a concrete view count, their channel median, or a named comparable video from their own history — never a generic guess.
 
 Return ONLY a single valid JSON object — no markdown, no explanation:
 
@@ -173,7 +173,11 @@ Return ONLY a single valid JSON object — no markdown, no explanation:
     },
     "recommendedLength": "Specific duration (e.g. '8–12 minutes') with the data reason (e.g. 'your top 5 videos avg 9.4 min; niche top-quartile peaks at 10–14 min')",
     "format": "Production approach: structure, pacing, camera style, b-roll needs — grounded in retention data",
-    "estimatedPerformance": "Honest projection vs channel average, citing the closest comparable video from their own history",
+    "prediction": {
+      "projectedOutcome": "A concrete performance call vs THIS channel's own recent numbers — give a view range or a clear over/under vs their median (e.g. 'likely 25K–40K views, ~1.8× your channel median of 14K'). Never vague.",
+      "basis": "The specific comparable video or metric from THEIR channel this is benchmarked against — e.g. 'benchmarked against your video \"X\" which hit 38K (2.7× your median)' or 'your last 3 videos on this topic averaged 22K'",
+      "confidence": "low, medium, or high — set by how much of their own data supports the comparison (number of comparable videos, strength/consistency of the retention and CTR signal). Use 'low' when comparables are thin (n<3)."
+    },
     "keyTalkingPoints": ["point 1 with why this angle resonates based on data", "point 2", "point 3", "point 4"],
     "thumbnail": {
       "concept": "Overall visual concept in one sentence — what the viewer sees at a glance",
@@ -444,13 +448,27 @@ export async function generateContentBrief(
     throw new Error("Brief response missing required keys (brief/autopsy)");
   }
 
+  const rawPrediction = parsed.brief.prediction as Partial<BriefPrediction> | undefined;
+  const prediction: BriefPrediction | undefined =
+    rawPrediction && (rawPrediction.projectedOutcome || rawPrediction.basis)
+      ? {
+          projectedOutcome: String(rawPrediction.projectedOutcome ?? ""),
+          basis: String(rawPrediction.basis ?? ""),
+          confidence: (["low", "medium", "high"].includes(rawPrediction.confidence as string)
+            ? rawPrediction.confidence
+            : "medium") as BriefPrediction["confidence"],
+        }
+      : undefined;
+
   const brief: ContentBrief = {
     weeklyIdea: String(parsed.brief.weeklyIdea ?? ""),
     titleOptions: ((parsed.brief.titleOptions as string[]) ?? []).slice(0, 3),
     hook: (parsed.brief.hook as ContentBrief["hook"]) ?? "",
     recommendedLength: String(parsed.brief.recommendedLength ?? ""),
     format: String(parsed.brief.format ?? ""),
-    estimatedPerformance: String(parsed.brief.estimatedPerformance ?? ""),
+    prediction,
+    // Legacy string only if the model still returned one; new briefs use `prediction`.
+    ...(parsed.brief.estimatedPerformance != null && { estimatedPerformance: String(parsed.brief.estimatedPerformance) }),
     keyTalkingPoints: (parsed.brief.keyTalkingPoints as string[]) ?? [],
     thumbnail: (parsed.brief.thumbnail as ContentBrief["thumbnail"]) ?? String(parsed.brief.thumbnailDirection ?? ""),
     dataEvidence: (parsed.brief.dataEvidence as ContentBrief["dataEvidence"]) ?? [],

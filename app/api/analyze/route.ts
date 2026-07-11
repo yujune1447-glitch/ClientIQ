@@ -647,13 +647,18 @@ export async function GET(request: NextRequest) {
         // can't suspend before the send finishes. sendBriefEmail catches all its own
         // errors; the extra try/catch guarantees a failed send never breaks the response.
         if (!updateError && userData?.email) {
+          // Flatten the structured prediction into a plain line for the email,
+          // falling back to the legacy free-text field for older briefs.
+          const predictionText = brief.prediction
+            ? [brief.prediction.projectedOutcome, brief.prediction.basis].filter(Boolean).join(" — ")
+            : (brief.estimatedPerformance ?? "");
           try {
             await sendBriefEmail({
               to: userData.email,
               analysisId: analysis.id,
               summary,
               ideaTitle: brief.weeklyIdea,
-              estimatedPerformance: brief.estimatedPerformance,
+              estimatedPerformance: predictionText,
             });
           } catch (err) {
             console.error("[analyze] sendBriefEmail failed (non-fatal):", err instanceof Error ? err.message : String(err));
