@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     client_reference_id: userId,
     line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: {
-      trial_period_days: 14,
+      trial_period_days: 30,
       metadata: { user_id: userId },
     },
     // Require a card up front even though the trial doesn't charge immediately.
