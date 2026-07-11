@@ -392,7 +392,8 @@ type YtTab = "live" | "analysis" | "ideas" | "channel-ideas";
 const YT_TABS: { key: YtTab; label: string }[] = [
   { key: "live", label: "Live Stats" },
   { key: "analysis", label: "Channel Analysis" },
-  { key: "ideas", label: "Planning Content" },
+  // "Planning Content" (ideas) hidden from the creator path — unlinked, not deleted.
+  // The tab content below remains in place; it is just unreachable from the tab bar.
   { key: "channel-ideas", label: "Channel Ideas" },
 ];
 

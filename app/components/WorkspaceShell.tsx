@@ -97,6 +97,10 @@ function saveConversations(convs: StoredConversation[]) {
   } catch {}
 }
 
+// Instagram + TikTok are hidden from the creator path (unlinked, not deleted).
+// Flip to true to re-enable their sidebar entries once those surfaces are finished.
+const SHOW_SECONDARY_PLATFORMS: boolean = false;
+
 export default function WorkspaceShell({
   initialView,
   sidebarAnalyses,
@@ -460,6 +464,8 @@ export default function WorkspaceShell({
                 </a>
               )}
 
+              {/* Instagram — hidden from the creator path (unlinked, not deleted) */}
+              {SHOW_SECONDARY_PLATFORMS && (
               <button
                 onClick={() => { setMainView("instagram"); setAiPanelOpen(false); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
@@ -474,8 +480,10 @@ export default function WorkspaceShell({
                   Soon
                 </span>
               </button>
+              )}
 
-              {ttConn ? (
+              {/* TikTok — hidden from the creator path (unlinked, not deleted) */}
+              {SHOW_SECONDARY_PLATFORMS && (ttConn ? (
                 <button
                   onClick={() => openAccountWithNewChat("tiktok")}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
@@ -508,7 +516,7 @@ export default function WorkspaceShell({
                   <Music2 className="w-3.5 h-3.5 shrink-0" />
                   <span className="text-[12px]">Connect TikTok</span>
                 </a>
-              )}
+              ))}
             </div>
           </div>
 

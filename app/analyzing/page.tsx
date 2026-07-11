@@ -52,7 +52,7 @@ function AnalyzingContent() {
           if (!cancelled && res.ok) {
             const data = await res.json();
             if (data?.id) {
-              router.replace(`/workspace?analysis=${data.id}`);
+              router.replace(`/analysis/${data.id}`);
               return;
             }
           }
@@ -143,7 +143,7 @@ function AnalyzingContent() {
       const res = await fetch("/api/analyze/recompute", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        router.push(`/workspace?analysis=${data.analysisId}`);
+        router.push(`/analysis/${data.analysisId}`);
       } else if (data.error === "no_cache") {
         setError("No cached data found. Run a full analysis first.");
       } else {
@@ -157,7 +157,7 @@ function AnalyzingContent() {
   };
 
   const goToLastAnalysis = () => {
-    router.push(latestAnalysisId ? `/workspace?analysis=${latestAnalysisId}` : "/workspace");
+    router.push(latestAnalysisId ? `/analysis/${latestAnalysisId}` : "/home");
   };
 
   const quotaError = error ? isQuotaError(error) : false;

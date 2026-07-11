@@ -133,9 +133,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${APP_URL}/?error=db_error`);
   }
 
-  console.log("[yt-callback] youtube_connections upserted OK. Redirecting to /home. user_id=%s", user.id);
+  console.log("[yt-callback] youtube_connections upserted OK. Redirecting to /analyzing. user_id=%s", user.id);
 
-  const response = NextResponse.redirect(`${APP_URL}/home`);
+  // Post-connect: land on the clean brief flow — shows the latest brief if one
+  // exists, otherwise generates the first brief ("your first brief is generating").
+  const response = NextResponse.redirect(`${APP_URL}/analyzing`);
   response.cookies.set("user_id", user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

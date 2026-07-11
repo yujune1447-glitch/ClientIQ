@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
-import { PlayCircle, BarChart3, Zap, ArrowRight, CheckCircle } from "lucide-react";
+import { PlayCircle, Zap, ArrowRight } from "lucide-react";
 
 export default async function LandingPage() {
   const cookieStore = await cookies();
@@ -17,140 +17,34 @@ export default async function LandingPage() {
           </div>
           <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Link href="/privacy" className="text-sm text-zinc-500 hover:text-white transition-colors hidden sm:inline">
-            Privacy
-          </Link>
-          <Link href="/terms" className="text-sm text-zinc-500 hover:text-white transition-colors hidden sm:inline">
-            Terms
-          </Link>
-          <a href="/home" className="text-sm text-zinc-400 hover:text-white transition-colors">
-            Sign in
-          </a>
-          <a
-            href="/home"
-            className="text-sm bg-white text-black px-4 py-1.5 rounded-md font-medium hover:bg-zinc-200 transition-colors"
-          >
-            Get Started
-          </a>
+        <div className="flex items-center gap-4 text-sm text-zinc-500">
+          <Link href="/privacy" className="hover:text-white transition-colors hidden sm:inline">Privacy</Link>
+          <Link href="/terms" className="hover:text-white transition-colors hidden sm:inline">Terms</Link>
+          <a href="/home" className="hover:text-white transition-colors">Sign in</a>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 max-w-4xl mx-auto w-full">
-        <div className="inline-flex items-center gap-2 bg-[#1c1c1f] border border-[#27272a] rounded-full px-4 py-1.5 text-xs text-zinc-400 mb-8">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#ff3040] inline-block" />
-          AI-powered content intelligence for creators
-        </div>
-
+      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 max-w-3xl mx-auto w-full">
         <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
-          Know exactly what
+          Your weekly
           <br />
-          <span className="text-[#ff3040]">to make next.</span>
+          <span className="text-[#ff3040]">YouTube game plan.</span>
         </h1>
 
         <p className="text-lg text-zinc-400 max-w-xl mb-10 leading-relaxed">
-          CreatorIQ analyses your full history across YouTube and TikTok, identifies what&apos;s
-          resonating with your audience, and generates your weekly content brief — powered by AI.
+          Connect your channel and get a clear, data-backed brief every week — exactly what to make next, and why.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <a
-            href="/home"
-            className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-          >
-            <PlayCircle className="w-4 h-4" />
-            Get Started
-            <ArrowRight className="w-4 h-4" />
-          </a>
-          <span className="text-xs text-zinc-600">Free to try · No credit card required</span>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="border-t border-[#1f1f22] py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600 text-center mb-12">
-            How it works
-          </p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                step: "01",
-                title: "Connect your platforms",
-                body: "Authorise read access to your YouTube and TikTok accounts. We pull your full history — every video, every stat.",
-                icon: <PlayCircle className="w-5 h-5" />,
-              },
-              {
-                step: "02",
-                title: "We analyse everything",
-                body: "Our engine calculates your averages, ranks every video by performance score, and isolates your top and bottom performers.",
-                icon: <BarChart3 className="w-5 h-5" />,
-              },
-              {
-                step: "03",
-                title: "Get your brief",
-                body: "Claude analyses the intelligence and returns a content autopsy and a precise weekly content brief — exactly what to make and why.",
-                icon: <Zap className="w-5 h-5" />,
-              },
-            ].map((item) => (
-              <div
-                key={item.step}
-                className="bg-[#111113] border border-[#1f1f22] rounded-xl p-6 hover:border-[#27272a] transition-colors"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-xs font-mono text-zinc-600">{item.step}</span>
-                  <div className="text-zinc-400">{item.icon}</div>
-                </div>
-                <h3 className="font-semibold text-[15px] mb-2">{item.title}</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed">{item.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="border-t border-[#1f1f22] py-20 px-6 bg-[#0d0d0f]">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-600 text-center mb-12">
-            What you get
-          </p>
-          <div className="grid md:grid-cols-2 gap-4">
-            {[
-              "Full history analysis across YouTube and TikTok — every video scored",
-              "Top 10 and bottom 10 performer breakdown",
-              "AI-generated weekly content brief with hook and titles",
-              "Content autopsy: what's working and what isn't",
-              "Audience pattern recognition from your comments across platforms",
-              "Outlier detection — your biggest surprise hits and misses",
-            ].map((feature) => (
-              <div key={feature} className="flex items-start gap-3 py-3">
-                <CheckCircle className="w-4 h-4 text-[#ff3040] mt-0.5 shrink-0" />
-                <span className="text-sm text-zinc-300">{feature}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="border-t border-[#1f1f22] py-20 px-6 text-center">
-        <div className="max-w-xl mx-auto">
-          <h2 className="text-3xl font-bold tracking-tight mb-4">
-            Stop guessing. Start growing.
-          </h2>
-          <p className="text-zinc-500 text-sm mb-8">
-            Connect your accounts in 30 seconds and get your first content brief today.
-          </p>
-          <a
-            href="/home"
-            className="inline-flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
-          >
-            <PlayCircle className="w-4 h-4" />
-            Get Started — it&apos;s free
-          </a>
-        </div>
+        <a
+          href="/api/auth/youtube"
+          className="flex items-center gap-2.5 bg-[#ff3040] hover:bg-[#e02030] text-white font-semibold px-6 py-3 rounded-lg transition-colors text-sm"
+        >
+          <PlayCircle className="w-4 h-4" />
+          Connect your channel · Start free trial
+          <ArrowRight className="w-4 h-4" />
+        </a>
+        <span className="text-xs text-zinc-600 mt-3">Free to try · No credit card required</span>
       </section>
 
       {/* Footer */}

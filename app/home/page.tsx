@@ -6,6 +6,10 @@ import { createAdminClient } from "@/lib/supabase-admin";
 const fmt = (n: number) =>
   new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 
+// TikTok + Instagram are hidden from the creator path (unlinked, not deleted).
+// Flip to true to re-enable their connect cards once those surfaces are finished.
+const SHOW_SECONDARY_PLATFORMS: boolean = false;
+
 export default async function HomePage() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("user_id")?.value;
@@ -96,8 +100,8 @@ export default async function HomePage() {
             />
           )}
 
-          {/* TikTok */}
-          {ttConn ? (
+          {/* TikTok — hidden from the creator path (unlinked, not deleted) */}
+          {SHOW_SECONDARY_PLATFORMS && (ttConn ? (
             <PlatformCard
               href="/workspace"
               icon={<Music2 className="w-5 h-5 text-white" />}
@@ -116,21 +120,23 @@ export default async function HomePage() {
               name="TikTok"
               blurb="Add short-form video signals to your cross-platform picture."
             />
-          )}
+          ))}
 
-          {/* Instagram — inert, blocked pending Meta verification */}
-          <div className="bg-[#0d0d0f] border border-[#1a1a1d] rounded-xl p-5 opacity-60 select-none">
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-600/40 to-pink-500/40 flex items-center justify-center shrink-0">
-                <Camera className="w-5 h-5 text-white/70" />
+          {/* Instagram — hidden from the creator path (unlinked, not deleted) */}
+          {SHOW_SECONDARY_PLATFORMS && (
+            <div className="bg-[#0d0d0f] border border-[#1a1a1d] rounded-xl p-5 opacity-60 select-none">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-600/40 to-pink-500/40 flex items-center justify-center shrink-0">
+                  <Camera className="w-5 h-5 text-white/70" />
+                </div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 border border-[#27272a] rounded-full px-2 py-0.5">
+                  Coming soon
+                </span>
               </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 border border-[#27272a] rounded-full px-2 py-0.5">
-                Coming soon
-              </span>
+              <p className="text-sm font-semibold text-zinc-300 mt-4">Instagram</p>
+              <p className="text-xs text-zinc-600 mt-1">Blocked pending Meta verification.</p>
             </div>
-            <p className="text-sm font-semibold text-zinc-300 mt-4">Instagram</p>
-            <p className="text-xs text-zinc-600 mt-1">Blocked pending Meta verification.</p>
-          </div>
+          )}
         </div>
       </section>
 
