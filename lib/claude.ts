@@ -174,8 +174,8 @@ Return ONLY a single valid JSON object — no markdown, no explanation:
     "recommendedLength": "Specific duration (e.g. '8–12 minutes') with the data reason (e.g. 'your top 5 videos avg 9.4 min; niche top-quartile peaks at 10–14 min')",
     "format": "Production approach: structure, pacing, camera style, b-roll needs — grounded in retention data",
     "prediction": {
-      "projectedOutcome": "A concrete performance call vs THIS channel's own recent numbers — give a view range or a clear over/under vs their median (e.g. 'likely 25K–40K views, ~1.8× your channel median of 14K'). Never vague.",
-      "basis": "The specific comparable video or metric from THEIR channel this is benchmarked against — e.g. 'benchmarked against your video \"X\" which hit 38K (2.7× your median)' or 'your last 3 videos on this topic averaged 22K'",
+      "projectedOutcome": "A concrete performance call benchmarked against the RELEVANT COMPARABLE SET named in 'basis' — the creator's closest topic/format-matched videos, NOT the channel's overall median. Lead with a view range and the multiple vs that cohort's own average (e.g. 'likely 25K–40K views, ~1.6× the 24K average of your comparable [topic] videos'). Cite the overall channel median only as secondary context, never as the headline multiple (e.g. '…and ~1.8× your 14K channel median'). Never vague.",
+      "basis": "Name the specific comparable set this prediction benchmarks against — the closest topic/format-matched videos from THEIR channel and that cohort's average, e.g. 'benchmarked against your 3 [topic] videos which averaged 24K (your video \"X\" hit 38K)'. This cohort — not the global median — is what projectedOutcome's headline multiple is measured against.",
       "confidence": "low, medium, or high — set by how much of their own data supports the comparison (number of comparable videos, strength/consistency of the retention and CTR signal). Use 'low' when comparables are thin (n<3)."
     },
     "keyTalkingPoints": ["point 1 with why this angle resonates based on data", "point 2", "point 3", "point 4"],
