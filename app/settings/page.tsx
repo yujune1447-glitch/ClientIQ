@@ -36,7 +36,7 @@ export default async function SettingsPage() {
           <div className="w-7 h-7 bg-[#ff3040] rounded-md flex items-center justify-center">
             <Zap className="w-4 h-4 text-white fill-white" />
           </div>
-          <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+          <span className="font-semibold text-[15px] tracking-tight">Listvin</span>
         </Link>
         <Link
           href="/workspace"
@@ -59,7 +59,7 @@ export default async function SettingsPage() {
         <ConnectedAccounts youtube={youtube} tiktok={tiktok} />
 
         <p className="text-xs text-zinc-600 mt-6 leading-relaxed">
-          Disconnecting revokes CreatorIQ&apos;s access and removes your stored data for that
+          Disconnecting revokes Listvin&apos;s access and removes your stored data for that
           account. Your chat history stays available. You can reconnect anytime.
         </p>
       </section>

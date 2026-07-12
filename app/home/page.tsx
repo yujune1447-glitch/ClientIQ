@@ -46,7 +46,7 @@ export default async function HomePage() {
           <div className="w-7 h-7 bg-[#ff3040] rounded-md flex items-center justify-center">
             <Zap className="w-4 h-4 text-white fill-white" />
           </div>
-          <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+          <span className="font-semibold text-[15px] tracking-tight">Listvin</span>
         </Link>
         {userId && (
           <div className="flex items-center gap-3">

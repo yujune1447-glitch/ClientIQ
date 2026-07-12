@@ -15,7 +15,7 @@ export default async function LandingPage() {
           <div className="w-7 h-7 bg-[#ff3040] rounded-md flex items-center justify-center">
             <Zap className="w-4 h-4 text-white fill-white" />
           </div>
-          <span className="font-semibold text-[15px] tracking-tight">CreatorIQ</span>
+          <span className="font-semibold text-[15px] tracking-tight">Listvin</span>
         </div>
         <div className="flex items-center gap-4 text-sm text-zinc-500">
           <Link href="/privacy" className="hover:text-white transition-colors hidden sm:inline">Privacy</Link>
@@ -55,7 +55,7 @@ export default async function LandingPage() {
           <Link href="/terms" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
         </div>
         <p className="text-xs text-zinc-700">
-          © 2025 CreatorIQ. Built for creators who take their content seriously.
+          © 2025 Listvin. Built for creators who take their content seriously.
         </p>
       </footer>
     </div>

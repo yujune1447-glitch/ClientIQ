@@ -392,7 +392,7 @@ export default function WorkspaceShell({
           <div className="w-6 h-6 bg-[#ff3040] rounded flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-white fill-white" />
           </div>
-          <span className="font-semibold text-[14px] tracking-tight">CreatorIQ</span>
+          <span className="font-semibold text-[14px] tracking-tight">Listvin</span>
         </button>
 
         <div className="flex-1 overflow-y-auto py-2 space-y-1">
