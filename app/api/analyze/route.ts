@@ -405,7 +405,13 @@ export async function GET(request: NextRequest) {
           budgetBlocked: 0,
         };
 
-        for (const videoId of captionTargetIds) {
+        // captions.list/download require the youtube.force-ssl scope, which we no
+        // longer request (minimal-scope OAuth). Skip the fetch entirely rather than
+        // burn quota on calls that would 403. Hook analysis degrades gracefully to
+        // "caption coverage too thin" when no captions are available. Set
+        // CAPTIONS_ENABLED=true only if force-ssl is re-added to the OAuth scopes.
+        const captionsEnabled = process.env.CAPTIONS_ENABLED === "true";
+        for (const videoId of captionsEnabled ? captionTargetIds : []) {
           if (cachedCaptionStatus.has(videoId)) {
             captionDebug.alreadyCached++;
             continue;
