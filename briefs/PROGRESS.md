@@ -1,13 +1,13 @@
-# CreatorIQ — Progress Log
+# Listvin — Progress Log
 
-*Living session-to-session memory. Read this at the START of every session; update it at the END. Pairs with `CreatorIQ_Master_Brief.md` (the what/why) and `CLAUDE.md` (technical rules). Between these three files + git, no lost chat can ever set you back.*
+*Living session-to-session memory. Read this at the START of every session; update it at the END. Pairs with `Listvin_Master_Brief.md` (the what/why) and `CLAUDE.md` (technical rules). Between these three files + git, no lost chat can ever set you back.*
 
-**How to use:** At session start, tell the assistant "read CLAUDE.md, CreatorIQ_Master_Brief.md, and PROGRESS.md." At session end, spend 60 seconds updating the four live sections below (Current Focus, Just Shipped, Next Up, Unverified). Keep it short — this is a log, not a document.
+**How to use:** At session start, tell the assistant "read CLAUDE.md, Listvin_Master_Brief.md, and PROGRESS.md." At session end, spend 60 seconds updating the four live sections below (Current Focus, Just Shipped, Next Up, Unverified). Keep it short — this is a log, not a document.
 
 ---
 
 ## Current Focus
-**PHASE: VALIDATION BEFORE BUILDING — no new code until creators pay.** (See the STRATEGY UPDATE at the top of `CreatorIQ_Master_Brief.md` for the full pivot rationale.)
+**PHASE: VALIDATION BEFORE BUILDING — no new code until creators pay.** (See the STRATEGY UPDATE at the top of `Listvin_Master_Brief.md` for the full pivot rationale.)
 
 **Launch strategy:** **YouTube-FIRST wedge**, not cross-platform-first. The engine is deep where YouTube's API is deep; every competitor that actually monetizes ($29–50/mo: VidIQ, Spotter, ViewStats) is YouTube-first. Cross-platform is now a **year-2 expansion**, not the launch story.
 

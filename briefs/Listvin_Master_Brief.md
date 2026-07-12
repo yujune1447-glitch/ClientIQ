@@ -1,6 +1,6 @@
-# CreatorIQ — Master Brief
+# Listvin — Master Brief
 
-*A single source of truth for what CreatorIQ is, why it exists, and where it's going. Paste this into any new chat to get an assistant fully briefed. Pairs with `CLAUDE.md` (technical/build rules) in the repo.*
+*A single source of truth for what Listvin is, why it exists, and where it's going. Paste this into any new chat to get an assistant fully briefed. Pairs with `CLAUDE.md` (technical/build rules) in the repo.*
 
 *Last updated: July 2026*
 
@@ -35,9 +35,9 @@ The direction evolved significantly. Where the sections below (written for a cro
 
 ---
 
-## 1. What CreatorIQ Is — in one line
+## 1. What Listvin Is — in one line
 
-CreatorIQ unifies YouTube Studio, Meta Business Suite, and TikTok Studio into one place, with an AI layer that generates **specific, structured content briefs** — exact title, hook, length, and outline — grounded in your own channel data and what's trending across all three platforms. Not generic ideas. The actual blueprint for the next thing you make.
+Listvin unifies YouTube Studio, Meta Business Suite, and TikTok Studio into one place, with an AI layer that generates **specific, structured content briefs** — exact title, hook, length, and outline — grounded in your own channel data and what's trending across all three platforms. Not generic ideas. The actual blueprint for the next thing you make.
 
 **The gap it fills:** No product today unifies all three platforms *and* layers real, channel-specific AI intelligence on top. Competitors do one platform, or many platforms with no AI, or AI that stops at topic-level suggestions.
 
@@ -45,7 +45,7 @@ CreatorIQ unifies YouTube Studio, Meta Business Suite, and TikTok Studio into on
 
 ## 2. The Vision
 
-Systemize going viral across every platform, in one place. Today a serious creator juggles three separate dashboards, guesses what to make next, and has no memory of whether their guesses worked. CreatorIQ becomes the single operational brain that (a) sees all your platforms at once, (b) tells you exactly what to make next and why, and (c) learns from what you actually shipped — so its advice sharpens the longer you use it.
+Systemize going viral across every platform, in one place. Today a serious creator juggles three separate dashboards, guesses what to make next, and has no memory of whether their guesses worked. Listvin becomes the single operational brain that (a) sees all your platforms at once, (b) tells you exactly what to make next and why, and (c) learns from what you actually shipped — so its advice sharpens the longer you use it.
 
 **Cross-platform is the essence of the product, not a feature.** The whole reason to exist is seeing and acting across YouTube, Instagram, and TikTok at once — so the product should go to market *as* a cross-platform tool, not a single-platform one.
 
@@ -65,7 +65,7 @@ Break it into three real problems:
 
 3. **The no-memory problem.** Creators (and the tools they use) never close the loop. You get an idea, maybe you make it, and nothing tracks whether it landed or feeds that back into better recommendations. Every suggestion starts from zero.
 
-CreatorIQ attacks all three: structured specifics, unified across platforms, with a feedback loop that remembers.
+Listvin attacks all three: structured specifics, unified across platforms, with a feedback loop that remembers.
 
 ---
 
@@ -85,13 +85,13 @@ CreatorIQ attacks all three: structured specifics, unified across platforms, wit
 
 **Strategic note:** serve both consumer and B2B, but don't split focus prematurely. Win the individual-creator beachhead first, then expand up-market into B2B where willingness-to-pay is higher. Consumer = free/low tier for reach and data; B2B = paid tiers that fund the business.
 
-**Go-to-market / distribution (updated):** The founder is deliberately **not** marketing this to his faith-based YouTube audience — it doesn't fit, and that audience isn't the ICP anyway. Instead, the beachhead is his **startup circle and content-creator friends** — a warmer, far more ICP-aligned early cohort (they *are* serious creators and operators), plus a **purpose-built marketing channel** (a new build-in-public presence dedicated to CreatorIQ). This is arguably a stronger wedge than the faith audience would have been: the people being sold to are the exact users the product is for.
+**Go-to-market / distribution (updated):** The founder is deliberately **not** marketing this to his faith-based YouTube audience — it doesn't fit, and that audience isn't the ICP anyway. Instead, the beachhead is his **startup circle and content-creator friends** — a warmer, far more ICP-aligned early cohort (they *are* serious creators and operators), plus a **purpose-built marketing channel** (a new build-in-public presence dedicated to Listvin). This is arguably a stronger wedge than the faith audience would have been: the people being sold to are the exact users the product is for.
 
 ---
 
 ## 6. Competitive Landscape
 
-| Competitor | What they are | Gap CreatorIQ exploits |
+| Competitor | What they are | Gap Listvin exploits |
 |---|---|---|
 | **VidIQ** | YouTube-only, strongest AI ideation | Ideas are topic-level, not structured briefs; no feedback loop; single platform. **Nearest threat** — most likely to expand into structured/cross-platform. |
 | **TubeBuddy** | YouTube-only SEO/optimization tool | No real channel-wide AI; single platform. |
@@ -107,7 +107,7 @@ CreatorIQ attacks all three: structured specifics, unified across platforms, wit
 **Live now / near-term:**
 
 1. **Structured briefs, not ideas.** The product outputs the exact title, hook, optimal length, and outline — grounded in your own top-performer patterns. The immediate differentiator.
-2. **Six-layer channel intelligence.** Analysis across Packaging, Retention (including an external "vs all YouTube" retention benchmark), Growth, Audience, Cadence, and Trajectory — synthesized into a plain-English "what works on your channel" that grounds every brief. VidIQ shows stats; CreatorIQ shows *what to do because of them.*
+2. **Six-layer channel intelligence.** Analysis across Packaging, Retention (including an external "vs all YouTube" retention benchmark), Growth, Audience, Cadence, and Trajectory — synthesized into a plain-English "what works on your channel" that grounds every brief. VidIQ shows stats; Listvin shows *what to do because of them.*
 
 **Compounding moats (the uncopyable ones):**
 
@@ -120,7 +120,7 @@ CreatorIQ attacks all three: structured specifics, unified across platforms, wit
 **Founder-specific:**
 
 8. **An ICP-aligned network.** Rather than leaning on his (off-ICP) faith audience, the founder goes to market through his startup circle and content-creator friends — the exact users the product serves. A tighter, higher-signal early cohort than a general audience: real creators and operators who can give sharp feedback and convert.
-9. **Build-in-public via a dedicated channel.** A new marketing presence built specifically around CreatorIQ's journey creates a community/trust moat competitors structurally can't match — and, unlike a borrowed audience, it's aligned to the product from day one.
+9. **Build-in-public via a dedicated channel.** A new marketing presence built specifically around Listvin's journey creates a community/trust moat competitors structurally can't match — and, unlike a borrowed audience, it's aligned to the product from day one.
 
 ---
 
@@ -133,7 +133,7 @@ CreatorIQ attacks all three: structured specifics, unified across platforms, wit
 - **AI trust is fragile.** If the briefs cite shaky patterns or over-claim on thin data, credibility collapses. **Mitigation:** statistical honesty is a core principle — median not mean, confidence-gate small samples, never present a coincidence as a formula.
 - **Solo-founder bandwidth.** One person building, selling, marketing, and supporting. Focus and ruthless scope discipline are survival traits. Beware building instead of shipping.
 - **Monetization unproven.** Will individual creators pay? VidIQ's pricing is the benchmark to test against. The free/paid line and the paid value prop still need sharpening.
-- **Low switching cost until the hub exists.** Until CreatorIQ owns weekly planning, a user can leave with little friction. Getting to operational-hub status is what locks retention.
+- **Low switching cost until the hub exists.** Until Listvin owns weekly planning, a user can leave with little friction. Getting to operational-hub status is what locks retention.
 
 ---
 

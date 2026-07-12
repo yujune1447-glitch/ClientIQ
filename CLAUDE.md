@@ -26,7 +26,7 @@ NEVER run, start, restart, or kill a dev server. A dev server always runs in Jak
 
 ---
 
-# CreatorIQ — Project Rules
+# Listvin — Project Rules
 
 ## What this is
 YouTube Studio + Meta Business Suite + TikTok Studio unified into one dashboard, with an AI layer that generates specific, data-grounded content structures (title, hook, length, outline) — not generic ideas. Built solo by Jake using Claude Code.

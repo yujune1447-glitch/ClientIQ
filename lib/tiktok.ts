@@ -164,7 +164,7 @@ export async function refreshTikTokToken(refreshToken: string): Promise<{
   }
 }
 
-// Revokes the grant on TikTok's side so CreatorIQ disappears from the user's
+// Revokes the grant on TikTok's side so Listvin disappears from the user's
 // authorized-apps list. Best-effort: an empty 200 body means success; any error
 // is swallowed so a local disconnect still proceeds. Returns true on confirmed revoke.
 export async function revokeTikTokToken(accessToken: string): Promise<boolean> {
