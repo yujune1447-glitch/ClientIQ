@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
-
 export async function GET(request: NextRequest) {
+  // Redirect back to the SAME origin this callback is served from — that's the
+  // host the user_id cookie is being set on. Using a fixed NEXT_PUBLIC_APP_URL
+  // here can drop the cookie if the OAuth redirect_uri domain drifts from it.
+  const origin = request.nextUrl.origin;
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
@@ -11,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   if (!code || searchParams.get("error")) {
     console.error("[yt-callback] OAuth denied or missing code. error=%s", searchParams.get("error"));
-    return NextResponse.redirect(`${APP_URL}/?error=oauth_denied`);
+    return NextResponse.redirect(`${origin}/?error=oauth_denied`);
   }
 
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
   if (!tokenRes.ok) {
     const errBody = await tokenRes.text();
     console.error("[yt-callback] Token exchange failed: %s", errBody);
-    return NextResponse.redirect(`${APP_URL}/?error=token_failed`);
+    return NextResponse.redirect(`${origin}/?error=token_failed`);
   }
 
   const tokenData = await tokenRes.json();
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest) {
 
   if (!access_token) {
     console.error("[yt-callback] No access_token in token response: %j", tokenData);
-    return NextResponse.redirect(`${APP_URL}/?error=token_failed`);
+    return NextResponse.redirect(`${origin}/?error=token_failed`);
   }
 
   const [channelRes, profileRes] = await Promise.all([
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
   const channel = channelData.items?.[0];
   if (!channel) {
     console.error("[yt-callback] No channel found in response: %j", channelData);
-    return NextResponse.redirect(`${APP_URL}/?error=no_channel`);
+    return NextResponse.redirect(`${origin}/?error=no_channel`);
   }
 
   console.log("[yt-callback] Channel found: id=%s title=%s", channel.id, channel.snippet?.title);
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
 
   if (userError || !user) {
     console.error("[yt-callback] User upsert failed: %j", userError);
-    return NextResponse.redirect(`${APP_URL}/?error=db_error`);
+    return NextResponse.redirect(`${origin}/?error=db_error`);
   }
 
   console.log("[yt-callback] User upserted/found: user_id=%s", user.id);
@@ -130,14 +132,14 @@ export async function GET(request: NextRequest) {
   if (connError) {
     console.error("[yt-callback] youtube_connections upsert FAILED: code=%s message=%s details=%s",
       connError.code, connError.message, connError.details);
-    return NextResponse.redirect(`${APP_URL}/?error=db_error`);
+    return NextResponse.redirect(`${origin}/?error=db_error`);
   }
 
   console.log("[yt-callback] youtube_connections upserted OK. Redirecting to /analyzing. user_id=%s", user.id);
 
   // Post-connect: land on the clean brief flow — shows the latest brief if one
   // exists, otherwise generates the first brief ("your first brief is generating").
-  const response = NextResponse.redirect(`${APP_URL}/analyzing`);
+  const response = NextResponse.redirect(`${origin}/analyzing`);
   response.cookies.set("user_id", user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
