@@ -240,6 +240,13 @@ export interface ChannelSynthesis {
 export interface SuccessPatterns {
   channelMedianViews: number;
   totalVideos: number;
+  // Present only when the channel materially posts BOTH formats (each >=3 videos).
+  // Undefined for single-format channels so consumers render nothing extra.
+  formatSplit?: {
+    dominant: "mixed";
+    longform: { n: number; medianViews: number };
+    shorts: { n: number; medianViews: number };
+  };
   tldr: TldrBullet[];
   titleCategories: TitleCategoryStat[];
   titleMechanics: TitleMechanicStat[];

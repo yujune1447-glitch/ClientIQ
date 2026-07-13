@@ -212,7 +212,7 @@ async function synthesize(
 ): Promise<{ findings: string[]; nextVideoAngle: string }> {
   const sp = summary.successPatterns;
   const all = summary.allVideos ?? [];
-  const topVids = all.slice(0, 5).map((v, i) => `${i + 1}. "${v.title}" — ${v.viewCount.toLocaleString()} views${isShort(v) ? " [Short]" : ""}`).join("\n");
+  const topVids = all.slice(0, 5).map((v, i) => `${i + 1}. "${v.title}" — ${v.viewCount.toLocaleString()} views`).join("\n");
   const tldr = (sp?.tldr ?? []).map((b) => `- ${b.text} (${b.evidence})`).join("\n") || "- (no strong packaging pattern detected)";
   const outliers = summary.outliers.map((v) => `"${v.title}" (${v.viewCount.toLocaleString()} views)`).join("; ") || "none";
   const comments = summary.topPerformers.flatMap((v) => v.topComments ?? []).slice(0, 40).map((c) => `- ${c.slice(0, 160)}`).join("\n") || "(no comments available)";
@@ -221,7 +221,7 @@ async function synthesize(
 
 CHANNEL: ${summary.channel.title} (${summary.channel.subscriberCount.toLocaleString()} subscribers)
 WINDOW: ${summary.totalVideosAnalysed} most recent uploads spanning ${ctx.spanMonths} months (${summary.dateRange.from.slice(0, 10)} → ${summary.dateRange.to.slice(0, 10)}), ~${ctx.uploadsPerWeek} uploads/week; most recent upload ${ctx.daysSinceLast} days ago.
-FORMAT MIX: ${ctx.longformCount} long-form (median ${ctx.longformMedian.toLocaleString()} views) · ${ctx.shortsCount} Shorts ≤60s (median ${ctx.shortsMedian.toLocaleString()} views). Compare long-form to long-form and Shorts to Shorts — NEVER blend the two view baselines, and don't treat a Short's view count as if it were a long-form result.${ctx.stale ? " NOTE: this window is stale or spans a long period — explicitly caveat that this read reflects older/less-recent activity, not necessarily the channel today." : ""}
+Median views/video (all formats): ${(sp?.channelMedianViews ?? 0).toLocaleString()}${ctx.stale ? "\nNOTE: this window is stale or spans a long period — caveat that this read reflects older/less-recent activity, not necessarily the channel today." : ""}
 
 TOP VIDEOS BY VIEWS:
 ${topVids}

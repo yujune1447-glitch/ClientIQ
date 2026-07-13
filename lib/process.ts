@@ -82,6 +82,22 @@ export function computeSuccessPatterns(
   const total = scored.length;
   const channelMedianViews = median(scored.map((v) => v.viewCount));
 
+  // ── Format split ──────────────────────────────────────────────────────────
+  // Shorts (≤60s) and long-form have wildly different view scales; a blended
+  // median misleads on mixed channels. Only surfaced when BOTH formats are
+  // material (≥3 videos each) — otherwise the channel is effectively one format
+  // and consumers render nothing extra. A stray 1–2 of the minor format barely
+  // moves a median anyway, so no special-casing is needed.
+  const shortVids = scored.filter((v) => { const s = parseDurSec(v.duration); return s > 0 && s <= 60; });
+  const longVids = scored.filter((v) => { const s = parseDurSec(v.duration); return s === 0 || s > 60; });
+  const formatSplit = shortVids.length >= 3 && longVids.length >= 3
+    ? {
+        dominant: "mixed" as const,
+        longform: { n: longVids.length, medianViews: Math.round(median(longVids.map((v) => v.viewCount))) },
+        shorts: { n: shortVids.length, medianViews: Math.round(median(shortVids.map((v) => v.viewCount))) },
+      }
+    : undefined;
+
   // ── 1. Title categories ───────────────────────────────────────────────────
   const titleCategories: TitleCategoryStat[] = TITLE_CATEGORY_DEFS.map(({ key, name, test }) => {
     const matching = scored.filter((v) => test(v.title));
@@ -235,6 +251,7 @@ export function computeSuccessPatterns(
   return {
     channelMedianViews,
     totalVideos: total,
+    formatSplit,
     tldr,
     titleCategories,
     titleMechanics,

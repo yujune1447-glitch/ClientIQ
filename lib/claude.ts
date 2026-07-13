@@ -27,6 +27,12 @@ function formatVideo(v: VideoWithScore, i: number) {
 
 function buildChannelSection(summary: ChannelSummary): string {
   const { channel, averages, topPerformers, bottomPerformers, outliers, totalVideosAnalysed, dateRange } = summary;
+  const fs = summary.successPatterns?.formatSplit;
+  const formatSection = fs
+    ? `\nFORMAT SPLIT — this channel posts BOTH formats, which have very different view scales. Benchmark within format; never blend the two baselines.
+Long-form: ${fs.longform.n} videos, median ${fmt(fs.longform.medianViews)} views
+Shorts (≤60s): ${fs.shorts.n} videos, median ${fmt(fs.shorts.medianViews)} views\n`
+    : "";
   return `CHANNEL INTELLIGENCE REPORT
 ===========================
 Channel: ${channel.title}${channel.handle ? ` (@${channel.handle})` : ""}
@@ -37,7 +43,7 @@ Date range: ${dateRange.from.slice(0, 10)} → ${dateRange.to.slice(0, 10)}
 CHANNEL AVERAGES
 Views/video: ${fmt(averages.views)} | Likes/video: ${fmt(averages.likes)} | Comments/video: ${fmt(averages.comments)}
 Retention: ${averages.retentionRate}%
-
+${formatSection}
 TOP 10 PERFORMING VIDEOS
 ${topPerformers.map(formatVideo).join("\n\n")}
 
@@ -157,6 +163,8 @@ const SYSTEM = `You are an expert YouTube content strategist. You receive a crea
 Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "niche median retention is 42%", "your #1 video got 3.2× your average views", "your top 3 videos all averaged 2.8× channel avg views"). Generic advice is not acceptable. This applies to the prediction too: projectedOutcome and basis must cite the creator's actual numbers — a concrete view count, their channel median, or a named comparable video from their own history — never a generic guess.
 
 NEVER state a numeric figure (view count, multiplier, percentage, or retention rate) that is not present in the provided data. Do not estimate, round loosely, or invent numbers. If you lack a number to support a point, describe the pattern qualitatively instead of fabricating a figure. The only forward-looking numbers permitted are in prediction.projectedOutcome, which must still be derived from — and stated relative to — the comparable figures given in the data.
+
+If a FORMAT SPLIT is present, this channel posts both long-form and Shorts, which have very different view scales. Target your weeklyIdea at ONE format, make clear which format it is, and benchmark its prediction against THAT format's median — never against the blended channel median. If no FORMAT SPLIT is present, treat the channel as single-format and proceed normally.
 
 Return ONLY a single valid JSON object — no markdown, no explanation:
 
