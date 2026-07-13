@@ -503,7 +503,7 @@ async function analyzeComments(
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4096, system: "You are an expert audience intelligence analyst. Return only valid JSON.", messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4096, temperature: 0.4, system: "You are an expert audience intelligence analyst. Return only valid JSON.", messages: [{ role: "user", content: prompt }] }),
   });
   const data = await res.json();
   if (!res.ok) return empty;
@@ -662,19 +662,63 @@ async function sendBriefEmail(opts: {
 }
 
 async function callClaude(prompt: string) {
-  const system = `You are an expert YouTube content strategist with cross-platform intelligence. Every recommendation MUST cite a specific data point from the channel or niche data. Return ONLY valid JSON — no markdown:
+  const system = `You are an expert YouTube content strategist with cross-platform intelligence. Every recommendation MUST cite a specific data point from the channel or niche data. NEVER state a numeric figure (view count, multiplier, percentage, or retention rate) that is not present in the provided data — if you lack a supporting number, describe the pattern qualitatively instead of inventing one. Return ONLY valid JSON — no markdown:
 {"brief":{"weeklyIdea":"specific video concept","titleOptions":["title using creator's best CTR pattern","title using niche format","curiosity-gap angle from comment signals"],"hook":{"openingLine":"exact first sentence","setup":"0-10s: what you establish","tension":"10-20s: conflict or curiosity gap","payoff":"20-30s: explicit value promise"},"recommendedLength":"specific duration with data reason","format":"production approach grounded in retention data","estimatedPerformance":"honest projection vs channel average citing comparable video","keyTalkingPoints":["point with data reason","point 2","point 3","point 4"],"thumbnail":{"concept":"one-sentence visual concept","colours":"specific palette with CTR data reason","composition":"layout and framing with data reason","textOverlay":"2-5 words max","faceExpression":"expression direction if relevant"},"dataEvidence":[{"claim":"Why this topic","evidence":"specific metric/video/stat"},{"claim":"Why this length","evidence":"specific data"},{"claim":"Why this thumbnail","evidence":"specific data"},{"claim":"Why this hook","evidence":"specific data"}]},"autopsy":{"overallTrend":"one honest sentence with numbers","whatIsWorking":["specific data-backed finding","finding 2","finding 3","finding 4"],"whatIsNotWorking":["specific data-backed finding","finding 2","finding 3"],"audienceInsights":"who this audience is with specifics","topPerformerPattern":"precise shared pattern with numbers","bottomPerformerPattern":"precise shared pattern with numbers","actionableAdvice":["specific action with rationale","action 2","action 3","action 4"]}}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: BRIEF_MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: BRIEF_MODEL, max_tokens: 8000, temperature: 0.5, system, messages: [{ role: "user", content: prompt }] }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Anthropic API error");
   const raw = data.content?.[0]?.text ?? "";
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return JSON.parse(text);
+}
+
+// ─── Grounding guard (inlined; Deno can't import lib/brief-grounding.ts) ─────────
+// Detect-and-log only. Flags backward-looking metric claims (multipliers, %,
+// view counts) that don't trace to a number anywhere in the source data. Never
+// mutates the brief. Forward-looking projections are intentionally not checked.
+
+function collectSourceNumbers(obj: unknown, out: number[] = []): number[] {
+  if (obj == null) return out;
+  if (typeof obj === "number") { if (Number.isFinite(obj)) out.push(obj); return out; }
+  if (typeof obj === "string") {
+    const n = parseFloat(obj.replace(/,/g, ""));
+    if (Number.isFinite(n) && /^\s*-?[\d,]+(?:\.\d+)?\s*$/.test(obj)) out.push(n);
+    return out;
+  }
+  if (Array.isArray(obj)) { for (const v of obj) collectSourceNumbers(v, out); return out; }
+  if (typeof obj === "object") { for (const v of Object.values(obj as Record<string, unknown>)) collectSourceNumbers(v, out); return out; }
+  return out;
+}
+
+function extractMetricClaims(text: string): { value: number; raw: string }[] {
+  const claims: { value: number; raw: string }[] = [];
+  const push = (value: number, raw: string) => { if (Number.isFinite(value)) claims.push({ value, raw }); };
+  const exp = (s: string, suf?: string) => { const n = parseFloat(s.replace(/,/g, "")); return suf === "K" ? n * 1e3 : suf === "M" ? n * 1e6 : n; };
+  let m: RegExpExecArray | null;
+  const pct = /(\d+(?:\.\d+)?)\s*%/g; while ((m = pct.exec(text))) push(parseFloat(m[1]), m[0]);
+  const mult = /(\d+(?:\.\d+)?)\s*(?:×|x)(?![a-z0-9])/gi; while ((m = mult.exec(text))) push(parseFloat(m[1]), m[0]);
+  const abbr = /(\d+(?:\.\d+)?)\s*([KM])\b/g; while ((m = abbr.exec(text))) push(exp(m[1], m[2]), m[0]);
+  const commas = /\b(\d{1,3}(?:,\d{3})+)\b/g; while ((m = commas.exec(text))) push(exp(m[1]), m[0]);
+  const views = /(\d[\d,]*)\s*views/gi; while ((m = views.exec(text))) push(exp(m[1]), m[0]);
+  return claims;
+}
+
+function checkGrounding(label: string, source: unknown, fields: Record<string, string | undefined>): void {
+  const nums = collectSourceNumbers(source);
+  const grounded = (v: number) => nums.some((s) => v === s || Math.abs(v - s) / Math.max(Math.abs(v), Math.abs(s), 1) <= 0.05 || Math.abs(v - s) <= 0.2);
+  const bad: string[] = [];
+  let checked = 0;
+  for (const [field, txt] of Object.entries(fields)) {
+    if (!txt) continue;
+    for (const c of extractMetricClaims(txt)) { checked++; if (!grounded(c.value)) bad.push(`${field}:"${c.raw.trim()}"`); }
+  }
+  if (bad.length) console.warn("[grounding] %s — %d/%d metric claims not in source data: %s", label, bad.length, checked, bad.join(", "));
+  else console.log("[grounding] %s — all %d metric claims trace to source data", label, checked);
 }
 
 // ─── Snapshot helpers ─────────────────────────────────────────────────────────
@@ -821,6 +865,22 @@ async function processCreator(
     commentIntelligence as unknown as Record<string, unknown>
   );
   const { brief, autopsy } = await callClaude(prompt);
+
+  // ── Grounding guard (log-only) ──────────────────────────────────────────────
+  try {
+    const ev = ((brief.dataEvidence as { evidence?: string }[] | undefined) ?? []).reduce(
+      (a, e, i) => { a[`dataEvidence[${i}]`] = e?.evidence; return a; },
+      {} as Record<string, string | undefined>,
+    );
+    checkGrounding(`cron:${summary.channel?.title ?? "channel"}`, summary, {
+      estimatedPerformance: brief.estimatedPerformance as string | undefined,
+      "autopsy.topPerformerPattern": (autopsy as { topPerformerPattern?: string })?.topPerformerPattern,
+      "autopsy.bottomPerformerPattern": (autopsy as { bottomPerformerPattern?: string })?.bottomPerformerPattern,
+      ...ev,
+    });
+  } catch (e) {
+    console.warn("[grounding] cron check failed (non-fatal):", e instanceof Error ? e.message : String(e));
+  }
 
   // ── Persist ───────────────────────────────────────────────────────────────
   const { data: analysis } = await supabase.from("analyses").insert({

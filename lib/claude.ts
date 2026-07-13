@@ -339,6 +339,8 @@ export async function computeChannelSynthesis(
   const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 1500,
+    // Lowered from default to keep cross-layer takeaways tight to the computed data.
+    temperature: 0.3,
     // Static system prompt (identical across every channel's synthesis) — cache it
     // so repeated runs within the cache window bill the system block at cache-read rate.
     system: [{ type: "text", text: SYNTHESIS_SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -354,6 +356,15 @@ export async function computeChannelSynthesis(
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
 
   const parsed = JSON.parse(text) as { headline: string; takeaways: ChannelSynthesis["takeaways"] };
+
+  try {
+    const fields: Record<string, string | undefined> = { headline: parsed.headline };
+    (parsed.takeaways ?? []).forEach((t, i) => { fields[`takeaways[${i}].evidence`] = t?.evidence; });
+    checkBriefGrounding(`synthesis:${channelTitle}`, { sp, commentIntel }, fields);
+  } catch (e) {
+    console.warn("[grounding] synthesis check failed (non-fatal):", e instanceof Error ? e.message : String(e));
+  }
+
   return {
     headline: String(parsed.headline ?? ""),
     takeaways: (parsed.takeaways ?? []).slice(0, 5),
