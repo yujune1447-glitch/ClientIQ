@@ -149,16 +149,70 @@ export interface PublicAnalysisResult {
   nextVideoAngle: string;
 }
 
+function durSec(iso: string): number {
+  const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(iso || "");
+  if (!m) return 0;
+  return parseInt(m[1] ?? "0") * 3600 + parseInt(m[2] ?? "0") * 60 + parseInt(m[3] ?? "0");
+}
+
+function medianOf(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+function isShort(v: { duration: string }): boolean {
+  const d = durSec(v.duration);
+  return d > 0 && d <= 60;
+}
+
+interface ChannelContext {
+  longformCount: number;
+  shortsCount: number;
+  longformMedian: number;
+  shortsMedian: number;
+  spanMonths: number;
+  uploadsPerWeek: number;
+  daysSinceLast: number;
+  stale: boolean;
+}
+
+// Segment the pulled window by format and describe its shape, so the model never
+// blends Shorts and long-form into one view baseline and stays honest about how
+// much — and how recent — the data actually is. Shorts detected as ≤60s
+// (conservative: avoids misclassifying short regular videos).
+function analyzeContext(summary: ChannelSummary): ChannelContext {
+  const all = summary.allVideos ?? [];
+  const shorts = all.filter(isShort);
+  const longform = all.filter((v) => !isShort(v));
+  const from = new Date(summary.dateRange.from).getTime();
+  const to = new Date(summary.dateRange.to).getTime();
+  const spanDays = Math.max(1, Math.round((to - from) / 86_400_000));
+  const daysSinceLast = Math.max(0, Math.round((Date.now() - to) / 86_400_000));
+  return {
+    longformCount: longform.length,
+    shortsCount: shorts.length,
+    longformMedian: medianOf(longform.map((v) => v.viewCount)),
+    shortsMedian: medianOf(shorts.map((v) => v.viewCount)),
+    spanMonths: Math.round((spanDays / 30.44) * 10) / 10,
+    uploadsPerWeek: Math.round((all.length / (spanDays / 7)) * 10) / 10,
+    daysSinceLast,
+    stale: daysSinceLast > 45 || spanDays / 30.44 > 18,
+  };
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function synthesize(
   summary: ChannelSummary,
   cadence: CadenceAnalysis,
   trajectory: TrajectoryAnalysis,
+  ctx: ChannelContext,
 ): Promise<{ findings: string[]; nextVideoAngle: string }> {
   const sp = summary.successPatterns;
   const all = summary.allVideos ?? [];
-  const topVids = all.slice(0, 5).map((v, i) => `${i + 1}. "${v.title}" — ${v.viewCount.toLocaleString()} views`).join("\n");
+  const topVids = all.slice(0, 5).map((v, i) => `${i + 1}. "${v.title}" — ${v.viewCount.toLocaleString()} views${isShort(v) ? " [Short]" : ""}`).join("\n");
   const tldr = (sp?.tldr ?? []).map((b) => `- ${b.text} (${b.evidence})`).join("\n") || "- (no strong packaging pattern detected)";
   const outliers = summary.outliers.map((v) => `"${v.title}" (${v.viewCount.toLocaleString()} views)`).join("; ") || "none";
   const comments = summary.topPerformers.flatMap((v) => v.topComments ?? []).slice(0, 40).map((c) => `- ${c.slice(0, 160)}`).join("\n") || "(no comments available)";
@@ -166,8 +220,8 @@ async function synthesize(
   const prompt = `You are analysing a YouTube channel from PUBLIC data only, to prepare a sharp cold-outreach hook. Be specific and grounded ONLY in the data below — no fluff, no generic advice.
 
 CHANNEL: ${summary.channel.title} (${summary.channel.subscriberCount.toLocaleString()} subscribers)
-Videos analysed: ${summary.totalVideosAnalysed} most recent | ${summary.dateRange.from.slice(0, 10)} → ${summary.dateRange.to.slice(0, 10)}
-Median views/video: ${(sp?.channelMedianViews ?? 0).toLocaleString()}
+WINDOW: ${summary.totalVideosAnalysed} most recent uploads spanning ${ctx.spanMonths} months (${summary.dateRange.from.slice(0, 10)} → ${summary.dateRange.to.slice(0, 10)}), ~${ctx.uploadsPerWeek} uploads/week; most recent upload ${ctx.daysSinceLast} days ago.
+FORMAT MIX: ${ctx.longformCount} long-form (median ${ctx.longformMedian.toLocaleString()} views) · ${ctx.shortsCount} Shorts ≤60s (median ${ctx.shortsMedian.toLocaleString()} views). Compare long-form to long-form and Shorts to Shorts — NEVER blend the two view baselines, and don't treat a Short's view count as if it were a long-form result.${ctx.stale ? " NOTE: this window is stale or spans a long period — explicitly caveat that this read reflects older/less-recent activity, not necessarily the channel today." : ""}
 
 TOP VIDEOS BY VIEWS:
 ${topVids}
@@ -203,7 +257,7 @@ Return ONLY a JSON object, no markdown:
   // Non-destructive grounding check: flag any metric claim in the outreach read
   // that isn't traceable to the channel's public summary data.
   try {
-    checkBriefGrounding(`light:${summary.channel.title}`, summary, {
+    checkBriefGrounding(`light:${summary.channel.title}`, { summary, ctx }, {
       nextVideoAngle,
       ...Object.fromEntries(findings.map((f, i) => [`findings[${i}]`, f])),
     });
@@ -245,7 +299,8 @@ export async function analyzePublicChannel(input: string): Promise<PublicAnalysi
   if (cadence.frequencyInsight) signals.push(cadence.frequencyInsight);
   if (trajectory.verdictText) signals.push(trajectory.verdictText);
 
-  const { findings, nextVideoAngle } = await synthesize(summary, cadence, trajectory);
+  const ctx = analyzeContext(summary);
+  const { findings, nextVideoAngle } = await synthesize(summary, cadence, trajectory, ctx);
 
   return {
     channel: {
