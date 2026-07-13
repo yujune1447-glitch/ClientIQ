@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logUsage } from "@/lib/usage";
+import { checkBriefGrounding } from "@/lib/brief-grounding";
 import type { ChannelSummary, ContentBrief, BriefPrediction, ContentAutopsy, VideoWithScore, NicheSummary, InstagramSummary, TikTokSummary, CommentIntelligence, SuccessPatterns, ChannelSynthesis } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -154,6 +155,8 @@ ${topVideos.map((v, i) => {
 const SYSTEM = `You are an expert YouTube content strategist. You receive a creator's full channel intelligence report plus optional niche, Instagram, and TikTok data.
 
 Every recommendation in the brief MUST be tied to a specific data point from the channel or niche data (e.g. "niche median retention is 42%", "your #1 video got 3.2× your average views", "your top 3 videos all averaged 2.8× channel avg views"). Generic advice is not acceptable. This applies to the prediction too: projectedOutcome and basis must cite the creator's actual numbers — a concrete view count, their channel median, or a named comparable video from their own history — never a generic guess.
+
+NEVER state a numeric figure (view count, multiplier, percentage, or retention rate) that is not present in the provided data. Do not estimate, round loosely, or invent numbers. If you lack a number to support a point, describe the pattern qualitatively instead of fabricating a figure. The only forward-looking numbers permitted are in prediction.projectedOutcome, which must still be derived from — and stated relative to — the comparable figures given in the data.
 
 Return ONLY a single valid JSON object — no markdown, no explanation:
 
@@ -396,6 +399,9 @@ export async function generateContentBrief(
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 8000,
+      // Lowered from the default 1.0 to tighten adherence to the provided data and
+      // reduce fabricated figures, while leaving room for creative titles/hooks.
+      temperature: 0.5,
       // Large static strategist system prompt, identical for every brief — cache it
       // so concurrent/repeat brief generations within the window read it cheaply.
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -476,5 +482,23 @@ export async function generateContentBrief(
 
   console.log("[claude] Brief generated in %dms. weeklyIdea='%s...' titleOptions=%d dataEvidence=%d",
     Date.now() - t0, brief.weeklyIdea.slice(0, 60), brief.titleOptions.length, brief.dataEvidence.length);
+
+  // Non-destructive grounding check: log any backward-looking metric claim that
+  // isn't traceable to the source summary. projectedOutcome is excluded (forward-looking).
+  try {
+    const ap = parsed.autopsy;
+    const groundingFields: Record<string, string | undefined> = {
+      "prediction.basis": brief.prediction?.basis,
+      "autopsy.topPerformerPattern": ap?.topPerformerPattern,
+      "autopsy.bottomPerformerPattern": ap?.bottomPerformerPattern,
+      ...Object.fromEntries((brief.dataEvidence ?? []).map((e, i) => [`dataEvidence[${i}]`, e?.evidence])),
+      ...Object.fromEntries((ap?.whatIsWorking ?? []).map((t, i) => [`autopsy.whatIsWorking[${i}]`, t])),
+      ...Object.fromEntries((ap?.whatIsNotWorking ?? []).map((t, i) => [`autopsy.whatIsNotWorking[${i}]`, t])),
+    };
+    checkBriefGrounding(`brief:${summary.channel.title}`, summary, groundingFields);
+  } catch (e) {
+    console.warn("[grounding] check failed (non-fatal):", e instanceof Error ? e.message : String(e));
+  }
+
   return { brief, autopsy: parsed.autopsy };
 }

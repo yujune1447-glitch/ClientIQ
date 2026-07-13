@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RawVideo, YouTubeChannel, ChannelSummary, VideoAnalytics, CadenceAnalysis, TrajectoryAnalysis } from "@/types";
 import { scoreVideos, buildSummary, computeCadenceAnalysis, computeTrajectoryAnalysis } from "@/lib/process";
+import { checkBriefGrounding } from "@/lib/brief-grounding";
 
 // Light-analysis tool: analyses ANY channel from PUBLIC data via the YouTube Data
 // API key (no OAuth / no user token). Reuses the public-safe subset of the existing
@@ -188,6 +189,8 @@ Return ONLY a JSON object, no markdown:
   const msg = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1200,
+    // Lowered from default to keep the cold-outreach read tight to the public data.
+    temperature: 0.4,
     messages: [{ role: "user", content: prompt }],
   });
   const block = msg.content[0];
@@ -195,7 +198,20 @@ Return ONLY a JSON object, no markdown:
   const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   const parsed = JSON.parse(text) as { findings?: unknown; nextVideoAngle?: unknown };
   const findings = Array.isArray(parsed.findings) ? parsed.findings.map(String).slice(0, 5) : [];
-  return { findings, nextVideoAngle: typeof parsed.nextVideoAngle === "string" ? parsed.nextVideoAngle : "" };
+  const nextVideoAngle = typeof parsed.nextVideoAngle === "string" ? parsed.nextVideoAngle : "";
+
+  // Non-destructive grounding check: flag any metric claim in the outreach read
+  // that isn't traceable to the channel's public summary data.
+  try {
+    checkBriefGrounding(`light:${summary.channel.title}`, summary, {
+      nextVideoAngle,
+      ...Object.fromEntries(findings.map((f, i) => [`findings[${i}]`, f])),
+    });
+  } catch (e) {
+    console.warn("[grounding] check failed (non-fatal):", e instanceof Error ? e.message : String(e));
+  }
+
+  return { findings, nextVideoAngle };
 }
 
 export async function analyzePublicChannel(input: string): Promise<PublicAnalysisResult> {
