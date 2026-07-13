@@ -209,6 +209,26 @@ function parseDuration(iso: string): number {
   return (parseInt(m[1] ?? "0") * 3600) + (parseInt(m[2] ?? "0") * 60) + parseInt(m[3] ?? "0");
 }
 
+// Shorts (≤60s) and long-form have very different view scales; only surface a
+// split when BOTH formats are material (≥3 videos each). Mirrors the shared
+// computeSuccessPatterns logic in lib/process.ts.
+function computeFormatSplit(videos: { viewCount: number; duration: string }[]) {
+  const med = (xs: number[]) => {
+    if (!xs.length) return 0;
+    const s = [...xs].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+  };
+  const shorts = videos.filter((v) => { const d = parseDuration(v.duration); return d > 0 && d <= 60; });
+  const longform = videos.filter((v) => { const d = parseDuration(v.duration); return d === 0 || d > 60; });
+  if (shorts.length < 3 || longform.length < 3) return undefined;
+  return {
+    dominant: "mixed" as const,
+    longform: { n: longform.length, medianViews: med(longform.map((v) => v.viewCount)) },
+    shorts: { n: shorts.length, medianViews: med(shorts.map((v) => v.viewCount)) },
+  };
+}
+
 function percentile(sorted: number[], p: number): number { return sorted[Math.floor(sorted.length * p)] ?? 0; }
 
 function extractFormats(titles: string[]): string[] {
@@ -535,7 +555,7 @@ function buildPrompt(
   ttSummary: Record<string, unknown> | null,
   commentIntel: Record<string, unknown> | null
 ): string {
-  const { channel, averages, topPerformers, bottomPerformers, outliers, totalVideosAnalysed, dateRange } = summary as {
+  const { channel, averages, topPerformers, bottomPerformers, outliers, totalVideosAnalysed, dateRange, formatSplit } = summary as {
     channel: { title: string; handle?: string; subscriberCount: number };
     averages: { views: number; likes: number; comments: number; ctr: number; retentionRate: number };
     topPerformers: { title: string; viewCount: number; viewsVsAverage: number; performanceScore: number; ctr: number; averageViewPercentage: number; publishedAt: string; topComments: string[] }[];
@@ -543,6 +563,7 @@ function buildPrompt(
     outliers: { title: string; viewCount: number }[];
     totalVideosAnalysed: number;
     dateRange: { from: string; to: string };
+    formatSplit?: { dominant: string; longform: { n: number; medianViews: number }; shorts: { n: number; medianViews: number } };
   };
 
   const fmtVideo = (v: typeof topPerformers[0], i: number) => {
@@ -551,6 +572,10 @@ function buildPrompt(
   };
 
   let prompt = `CHANNEL INTELLIGENCE REPORT\n${"=".repeat(30)}\nChannel: ${channel.title}${channel.handle ? ` (@${channel.handle})` : ""}\nSubscribers: ${fmt(channel.subscriberCount)}\nTotal videos: ${totalVideosAnalysed}\nDate range: ${String(dateRange.from).slice(0, 10)} → ${String(dateRange.to).slice(0, 10)}\n\nCHANNEL AVERAGES\nViews: ${fmt(averages.views)} | Likes: ${fmt(averages.likes)} | Comments: ${fmt(averages.comments)}\nCTR: ${averages.ctr}% | Retention: ${averages.retentionRate}%\n\nTOP 5 PERFORMING VIDEOS\n${topPerformers.slice(0, 5).map(fmtVideo).join("\n\n")}\n\nBOTTOM 5 PERFORMING VIDEOS\n${bottomPerformers.slice(0, 5).map(fmtVideo).join("\n\n")}\n\nOUTLIERS\n${outliers.length ? outliers.map((v, i) => `${i + 1}. "${v.title}" — ${fmt(v.viewCount)} views`).join("\n") : "None"}`;
+
+  if (formatSplit) {
+    prompt += `\n\nFORMAT SPLIT — this channel posts BOTH formats, which have very different view scales. Benchmark within format; never blend the two baselines.\nLong-form: ${formatSplit.longform.n} videos, median ${fmt(formatSplit.longform.medianViews)} views\nShorts (≤60s): ${formatSplit.shorts.n} videos, median ${fmt(formatSplit.shorts.medianViews)} views`;
+  }
 
   if (nicheSummary) {
     const n = nicheSummary as ReturnType<typeof processNicheData>;
@@ -662,7 +687,7 @@ async function sendBriefEmail(opts: {
 }
 
 async function callClaude(prompt: string) {
-  const system = `You are an expert YouTube content strategist with cross-platform intelligence. Every recommendation MUST cite a specific data point from the channel or niche data. NEVER state a numeric figure (view count, multiplier, percentage, or retention rate) that is not present in the provided data — if you lack a supporting number, describe the pattern qualitatively instead of inventing one. Return ONLY valid JSON — no markdown:
+  const system = `You are an expert YouTube content strategist with cross-platform intelligence. Every recommendation MUST cite a specific data point from the channel or niche data. NEVER state a numeric figure (view count, multiplier, percentage, or retention rate) that is not present in the provided data — if you lack a supporting number, describe the pattern qualitatively instead of inventing one. If a FORMAT SPLIT block is present, target your weeklyIdea at ONE format, say which, and benchmark estimatedPerformance against THAT format's median — never the blended channel median. Return ONLY valid JSON — no markdown:
 {"brief":{"weeklyIdea":"specific video concept","titleOptions":["title using creator's best CTR pattern","title using niche format","curiosity-gap angle from comment signals"],"hook":{"openingLine":"exact first sentence","setup":"0-10s: what you establish","tension":"10-20s: conflict or curiosity gap","payoff":"20-30s: explicit value promise"},"recommendedLength":"specific duration with data reason","format":"production approach grounded in retention data","estimatedPerformance":"honest projection vs channel average citing comparable video","keyTalkingPoints":["point with data reason","point 2","point 3","point 4"],"thumbnail":{"concept":"one-sentence visual concept","colours":"specific palette with CTR data reason","composition":"layout and framing with data reason","textOverlay":"2-5 words max","faceExpression":"expression direction if relevant"},"dataEvidence":[{"claim":"Why this topic","evidence":"specific metric/video/stat"},{"claim":"Why this length","evidence":"specific data"},{"claim":"Why this thumbnail","evidence":"specific data"},{"claim":"Why this hook","evidence":"specific data"}]},"autopsy":{"overallTrend":"one honest sentence with numbers","whatIsWorking":["specific data-backed finding","finding 2","finding 3","finding 4"],"whatIsNotWorking":["specific data-backed finding","finding 2","finding 3"],"audienceInsights":"who this audience is with specifics","topPerformerPattern":"precise shared pattern with numbers","bottomPerformerPattern":"precise shared pattern with numbers","actionableAdvice":["specific action with rationale","action 2","action 3","action 4"]}}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -846,6 +871,7 @@ async function processCreator(
     channel, averages: scored.averages, topPerformers, bottomPerformers,
     outliers: scored.outliers, totalVideosAnalysed: scored.sorted.length,
     dateRange: scored.dateRange, topCommenters: topCommenters.length > 0 ? topCommenters : undefined,
+    formatSplit: computeFormatSplit(scored.sorted),
   };
 
   // ── Comment intelligence ──────────────────────────────────────────────────

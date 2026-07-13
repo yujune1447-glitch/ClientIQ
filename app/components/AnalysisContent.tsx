@@ -510,6 +510,7 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
   const hookClusters = extractHookClusters(topPerformers.map((v) => v.title));
   const bottomHookClusters = extractHookClusters(bottomPerformers.map((v) => v.title));
   const sp = summary.successPatterns;
+  const formatSplit = sp?.formatSplit ?? summary.formatSplit;
   const maxDurAvg = sp && sp.durationBuckets.length ? Math.max(...sp.durationBuckets.map((b) => b.medianViews), 1) : 1;
   const maxDayAvg = sp && sp.postingTiming.byDayOfWeek.length ? Math.max(...sp.postingTiming.byDayOfWeek.map((d) => d.medianViews), 1) : 1;
   const maxSlotAvg = sp && sp.postingTiming.byTimeOfDay.length ? Math.max(...sp.postingTiming.byTimeOfDay.map((s) => s.medianViews), 1) : 1;
@@ -723,19 +724,19 @@ function YouTubeView({ analysis, snapshots }: { analysis: AnalysisData; snapshot
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 pb-24">
 
           {/* Format split — only when the channel materially posts both formats */}
-          {sp?.formatSplit && (
+          {formatSplit && (
             <div className="bg-[#111113] border border-[#1f1f22] rounded-xl px-5 py-4">
               <p className="text-[10px] font-semibold text-[#ff3040] uppercase tracking-wider mb-3">Format split — benchmarked separately</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-[#0c0c0e] border border-[#1f1f22] rounded-lg px-4 py-3">
                   <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Long-form</p>
-                  <p className="text-lg font-semibold text-zinc-100 mt-1">{fmt(sp.formatSplit.longform.medianViews)}</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">median views · {sp.formatSplit.longform.n} videos</p>
+                  <p className="text-lg font-semibold text-zinc-100 mt-1">{fmt(formatSplit.longform.medianViews)}</p>
+                  <p className="text-[10px] text-zinc-600 mt-0.5">median views · {formatSplit.longform.n} videos</p>
                 </div>
                 <div className="bg-[#0c0c0e] border border-[#1f1f22] rounded-lg px-4 py-3">
                   <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Shorts ≤60s</p>
-                  <p className="text-lg font-semibold text-zinc-100 mt-1">{fmt(sp.formatSplit.shorts.medianViews)}</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">median views · {sp.formatSplit.shorts.n} videos</p>
+                  <p className="text-lg font-semibold text-zinc-100 mt-1">{fmt(formatSplit.shorts.medianViews)}</p>
+                  <p className="text-[10px] text-zinc-600 mt-0.5">median views · {formatSplit.shorts.n} videos</p>
                 </div>
               </div>
             </div>

@@ -279,6 +279,13 @@ export interface ChannelSummary {
   dateRange: { from: string; to: string };
   topCommenters?: { author: string; count: number }[];
   successPatterns?: SuccessPatterns;
+  // Top-level fallback for the weekly cron, which doesn't compute successPatterns
+  // but still surfaces the format split. Same shape as SuccessPatterns.formatSplit.
+  formatSplit?: {
+    dominant: "mixed";
+    longform: { n: number; medianViews: number };
+    shorts: { n: number; medianViews: number };
+  };
 }
 
 export interface RawVideo {
