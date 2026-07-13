@@ -15,6 +15,20 @@ const INSTAGRAM_APP_SECRET = Deno.env.get("INSTAGRAM_APP_SECRET")!;
 // (e.g. set BRIEF_MODEL=claude-haiku-4-5). Defaults to the higher-quality model.
 const BRIEF_MODEL = Deno.env.get("BRIEF_MODEL") ?? "claude-sonnet-4-6";
 
+// Subscription gating. Off by default so pre-launch dogfooding keeps generating;
+// set ENFORCE_SUBSCRIPTION=true before charging real creators. Admin emails always
+// pass regardless of subscription state.
+const ENFORCE_SUBSCRIPTION = (Deno.env.get("ENFORCE_SUBSCRIPTION") ?? "false").toLowerCase() === "true";
+const ADMIN_EMAILS = new Set(
+  (Deno.env.get("ADMIN_EMAIL") ?? "yujune1447@gmail.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
+
+// Access is granted while a subscription is trialing or active; admins always pass.
+function hasBriefAccess(email: string | null | undefined, status: string | null | undefined): boolean {
+  if (email && ADMIN_EMAILS.has(email.toLowerCase())) return true;
+  return status === "trialing" || status === "active";
+}
+
 // Supabase Edge Runtime background-task API (declared for type-checking).
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
 
@@ -875,7 +889,7 @@ Deno.serve(async (req) => {
   if (req.headers.get("Authorization") !== `Bearer ${CRON_SECRET}`) return new Response("Unauthorized", { status: 401 });
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const { data: connections } = await supabase.from("youtube_connections").select("*, users!inner(niche, email)").not("refresh_token", "is", null);
+  const { data: connections } = await supabase.from("youtube_connections").select("*, users!inner(niche, email, subscription_status)").not("refresh_token", "is", null);
   const conns = connections ?? [];
 
   // Each creator's brief (YouTube pull + 2 Claude calls) can run ~150s, past the
@@ -883,15 +897,26 @@ Deno.serve(async (req) => {
   // loop as a background task so we return immediately and generation continues
   // after the response is sent.
   const run = async () => {
+    let generated = 0;
     for (const conn of conns) {
+      const email = conn.users?.email ?? null;
+      const status = conn.users?.subscription_status ?? null;
+      if (!hasBriefAccess(email, status)) {
+        if (ENFORCE_SUBSCRIPTION) {
+          console.log("[weekly-brief] skip — no active subscription — user %s (status=%s)", conn.user_id, status ?? "none");
+          continue;
+        }
+        console.log("[weekly-brief] would skip (ENFORCE_SUBSCRIPTION off) — user %s (status=%s)", conn.user_id, status ?? "none");
+      }
       try {
         await processCreator(conn, supabase);
+        generated++;
         console.log("[weekly-brief] ok — user %s", conn.user_id);
       } catch (err) {
         console.error("[weekly-brief] error — user %s:", conn.user_id, err instanceof Error ? err.message : String(err));
       }
     }
-    console.log("[weekly-brief] finished background run — %d creators", conns.length);
+    console.log("[weekly-brief] finished background run — %d generated of %d connections", generated, conns.length);
   };
 
   EdgeRuntime.waitUntil(run());
